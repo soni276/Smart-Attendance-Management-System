@@ -3,25 +3,25 @@ import OpenAI from "openai";
 import {
   generateAIInsights,
   getAttendanceSummary,
-  getClasswiseSummary,
+  getCoursewiseSummary,
   getDefaulters,
   getSubjectwiseSummary,
   getWeeklyTrend,
 } from "@/lib/analytics";
 import { parseApiBody, prepareStore } from "@/lib/api-utils";
 import { KEYS, getAll, getSettings, saveFewShot } from "@/lib/storage-server";
-import type { AttendanceRecord, ClassRoom, Student } from "@/types";
+import type { AttendanceRecord, Course, Student } from "@/types";
 
 interface InsightsBody {
   dateRange: { days: number } | { from: string; to: string };
-  classId?: string;
+  courseId?: string;
   _store?: Record<string, unknown>;
 }
 
 function filterRecords(
   records: AttendanceRecord[],
   dateRange: InsightsBody["dateRange"],
-  classId?: string
+  courseId?: string
 ): AttendanceRecord[] {
   let filtered = records;
 
@@ -38,8 +38,8 @@ function filterRecords(
     );
   }
 
-  if (classId) {
-    filtered = filtered.filter((r) => r.classId === classId);
+  if (courseId) {
+    filtered = filtered.filter((r) => r.courseId === courseId);
   }
 
   return filtered;
@@ -53,7 +53,8 @@ export async function POST(request: Request) {
     prepareStore(body);
 
     const settings = getSettings();
-    const apiKey = settings.openaiApiKey?.trim() || process.env.OPENAI_API_KEY;
+    const apiKey =
+      settings.openaiApiKey?.trim() || process.env.OPENAI_API_KEY;
     if (!apiKey) {
       return NextResponse.json(
         { error: "OpenAI API key not configured" },
@@ -62,27 +63,26 @@ export async function POST(request: Request) {
     }
 
     const students = getAll<Student>(KEYS.STUDENTS);
-    const classes = getAll<ClassRoom>(KEYS.CLASSES);
+    const courses = getAll<Course>(KEYS.COURSES);
     const allRecords = getAll<AttendanceRecord>(KEYS.ATTENDANCE);
-    const records = filterRecords(allRecords, body.dateRange, body.classId);
+    const records = filterRecords(allRecords, body.dateRange, body.courseId);
 
     const summary = getAttendanceSummary(records, students);
-    const days =
-      "days" in body.dateRange ? body.dateRange.days : 30;
+    const days = "days" in body.dateRange ? body.dateRange.days : 30;
     const trends = getWeeklyTrend(records, Math.min(days, 30));
     const defaulters = getDefaulters(
       records,
       students,
       settings.minAttendancePercent
     );
-    const classSummaries = getClasswiseSummary(records, classes, students);
-    const subjectSummaries = getSubjectwiseSummary(records, classes);
+    const courseSummaries = getCoursewiseSummary(records, courses, students);
+    const subjectSummaries = getSubjectwiseSummary(records, courses);
 
     const prompt = generateAIInsights(
       summary,
       trends,
       defaulters,
-      classSummaries,
+      courseSummaries,
       subjectSummaries
     );
 
@@ -93,7 +93,7 @@ export async function POST(request: Request) {
         {
           role: "system",
           content:
-            "You are an expert school attendance analyst. Provide clear, data-driven insights in markdown. Each insight must use ### heading, **Severity:** line, and a description with specific numbers.",
+            "You are an expert university attendance analyst. Use college terminology: courses (not classes), faculty (not teachers), enrollment number (not roll number), batch (not section), semester. Provide clear, data-driven insights in markdown. Each insight must use ### heading, **Severity:** line, and a description with specific numbers.",
         },
         { role: "user", content: prompt },
       ],
@@ -111,7 +111,7 @@ export async function POST(request: Request) {
         : `${body.dateRange.from} to ${body.dateRange.to}`;
 
     saveFewShot(
-      `Analytics insights for ${rangeLabel}${body.classId ? ` (class ${body.classId})` : ""}`,
+      `Analytics insights for ${rangeLabel}${body.courseId ? ` (course ${body.courseId})` : ""}`,
       insights
     );
 

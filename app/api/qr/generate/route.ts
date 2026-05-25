@@ -1,20 +1,18 @@
 import { NextResponse } from "next/server";
-import {
-  createQRPayload,
-  qrPayloadToString,
-} from "@/lib/qr";
+import { createQRPayload, qrPayloadToString } from "@/lib/qr";
 import { parseApiBody, prepareStore } from "@/lib/api-utils";
 import { KEYS, getAll, getSettings, save } from "@/lib/storage-server";
 import { generateId, getTodayString, getWindowSlot } from "@/lib/utils";
 import type { QRSession } from "@/types";
 
 interface GenerateBody {
-  classId: string;
+  courseId: string;
   subjectId: string;
   subject: string;
-  teacherId: string;
-  teacherName: string;
-  className: string;
+  facultyId: string;
+  facultyName: string;
+  courseName: string;
+  courseCode: string;
   startTime: string;
   endTime: string;
   lateAfterMinutes?: number;
@@ -37,16 +35,19 @@ function toISODateTime(date: string, time: string): string {
 
 export async function POST(request: Request) {
   try {
-    const body = await parseApiBody<GenerateBody>(request as import("next/server").NextRequest);
+    const body = await parseApiBody<GenerateBody>(
+      request as import("next/server").NextRequest
+    );
     prepareStore(body);
 
     const required = [
-      "classId",
+      "courseId",
       "subjectId",
       "subject",
-      "teacherId",
-      "teacherName",
-      "className",
+      "facultyId",
+      "facultyName",
+      "courseName",
+      "courseCode",
       "startTime",
       "endTime",
     ] as const;
@@ -65,7 +66,7 @@ export async function POST(request: Request) {
     const slotStart = toSlotTime(body.startTime);
     const slotEnd = toSlotTime(body.endTime);
     const windowSlot = getWindowSlot(
-      body.classId,
+      body.courseId,
       date,
       slotStart,
       slotEnd
@@ -74,7 +75,7 @@ export async function POST(request: Request) {
     const existing = getAll<QRSession>(KEYS.QR_SESSIONS).find(
       (s) =>
         s.isActive &&
-        s.classId === body.classId &&
+        s.courseId === body.courseId &&
         s.windowSlot === windowSlot
     );
 
@@ -96,12 +97,13 @@ export async function POST(request: Request) {
     const now = new Date().toISOString();
     let session: QRSession = {
       id: generateId(),
-      classId: body.classId,
+      courseId: body.courseId,
       subjectId: body.subjectId,
       subject: body.subject,
-      teacherId: body.teacherId,
-      teacherName: body.teacherName,
-      className: body.className,
+      facultyId: body.facultyId,
+      facultyName: body.facultyName,
+      courseName: body.courseName,
+      courseCode: body.courseCode,
       date,
       windowSlot,
       startTime: toISODateTime(date, body.startTime),

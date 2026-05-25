@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard,
   Users,
-  School,
+  GraduationCap,
   ClipboardCheck,
   BarChart3,
   FileText,
@@ -33,31 +33,40 @@ interface NavItem {
 const ADMIN_NAV: NavItem[] = [
   { label: "Dashboard", href: "/admin", icon: LayoutDashboard },
   { label: "Students", href: "/admin/students", icon: Users },
-  { label: "Classes", href: "/admin/classes", icon: School },
-  { label: "Mark Attendance", href: "/admin/mark-attendance", icon: ClipboardCheck },
+  { label: "Faculty", href: "/admin/faculty", icon: GraduationCap },
+  { label: "Courses", href: "/admin/classes", icon: BookOpen },
+  {
+    label: "Take Attendance",
+    href: "/admin/mark-attendance",
+    icon: ClipboardCheck,
+  },
   { label: "Analytics", href: "/admin/analytics", icon: BarChart3 },
   { label: "Reports", href: "/admin/reports", icon: FileText },
   { label: "Settings", href: "/admin/settings", icon: Settings },
 ];
 
-const TEACHER_NAV: NavItem[] = [
-  { label: "Dashboard", href: "/teacher", icon: LayoutDashboard },
-  { label: "Mark Attendance", href: "/teacher/mark-attendance", icon: ClipboardCheck },
-  { label: "My Classes", href: "/teacher/my-classes", icon: BookOpen },
-  { label: "Reports", href: "/teacher/reports", icon: FileText },
+const FACULTY_NAV: NavItem[] = [
+  { label: "Dashboard", href: "/faculty", icon: LayoutDashboard },
+  {
+    label: "Take Attendance",
+    href: "/faculty/mark-attendance",
+    icon: ClipboardCheck,
+  },
+  { label: "My Courses", href: "/faculty/my-courses", icon: BookOpen },
+  { label: "Reports", href: "/faculty/reports", icon: FileText },
 ];
 
 const STUDENT_NAV: NavItem[] = [
   { label: "My Attendance", href: "/student", icon: ClipboardCheck },
-  { label: "Schedule", href: "/student/schedule", icon: Calendar },
+  { label: "Timetable", href: "/student/schedule", icon: Calendar },
 ];
 
 function getNavItems(role: SessionUser["role"]): NavItem[] {
   switch (role) {
     case "admin":
       return ADMIN_NAV;
-    case "teacher":
-      return TEACHER_NAV;
+    case "faculty":
+      return FACULTY_NAV;
     case "student":
       return STUDENT_NAV;
     default:
@@ -125,14 +134,19 @@ export function Sidebar({
           </div>
           <AnimatePresence>
             {showLabels && (
-              <motion.span
+              <motion.div
                 initial={{ opacity: 0, width: 0 }}
                 animate={{ opacity: 1, width: "auto" }}
                 exit={{ opacity: 0, width: 0 }}
-                className="font-display text-lg font-bold whitespace-nowrap"
+                className="overflow-hidden whitespace-nowrap"
               >
-                SAS
-              </motion.span>
+                <p className="font-display text-base font-bold leading-tight text-white">
+                  Campus Attendance
+                </p>
+                <p className="text-[10px] leading-tight text-slate-400">
+                  Powered by AI &amp; Face Recognition
+                </p>
+              </motion.div>
             )}
           </AnimatePresence>
         </div>
@@ -167,7 +181,7 @@ export function Sidebar({
           const isActive =
             pathname === item.href ||
             (item.href !== "/admin" &&
-              item.href !== "/teacher" &&
+              item.href !== "/faculty" &&
               item.href !== "/student" &&
               pathname.startsWith(item.href));
 

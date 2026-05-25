@@ -6,11 +6,11 @@ import { X } from "lucide-react";
 import { CalendarHeatmap } from "@/components/charts/CalendarHeatmap";
 import { getInitials, getStudentAttendancePercent } from "@/lib/student-helpers";
 import { formatDate, formatTime, getStatusColor, getTodayString } from "@/lib/utils";
-import type { AttendanceRecord, ClassRoom, Student } from "@/types";
+import type { AttendanceRecord, Course, Student } from "@/types";
 
 interface StudentDetailDrawerProps {
   student: Student | null;
-  classRoom: ClassRoom | null;
+  courses: Course[];
   records: AttendanceRecord[];
   onClose: () => void;
 }
@@ -19,7 +19,7 @@ type Tab = "overview" | "calendar" | "records";
 
 export function StudentDetailDrawer({
   student,
-  classRoom,
+  courses,
   records,
   onClose,
 }: StudentDetailDrawerProps) {
@@ -34,28 +34,30 @@ export function StudentDetailDrawer({
     ? getStudentAttendancePercent(student.id, records)
     : 0;
 
-  const subjectStats = useMemo(() => {
-    if (!classRoom) return [];
-    const subjects = new Map<string, string>();
-    classRoom.schedule.forEach((s) => subjects.set(s.subjectId, s.subject));
-    return Array.from(subjects.entries()).map(([subjectId, subject]) => {
-      const subRecs = studentRecords.filter((r) => r.subjectId === subjectId);
-      const p =
-        subRecs.length === 0
-          ? 0
-          : Math.round(
-              (subRecs.filter(
-                (r) =>
-                  r.status === "present" ||
-                  r.status === "late" ||
-                  r.status === "half-day"
-              ).length /
-                subRecs.length) *
-                100
-            );
-      return { subject, percent: p };
+  const studentCourses = useMemo(
+    () =>
+      student
+        ? courses.filter((c) => student.courseIds.includes(c.id))
+        : [],
+    [student, courses]
+  );
+
+  const courseStats = useMemo(() => {
+    return studentCourses.map((c) => {
+      const courseRecs = studentRecords.filter((r) => r.courseId === c.id);
+      const total = courseRecs.length;
+      const attended = courseRecs.filter(
+        (r) =>
+          r.status === "present" ||
+          r.status === "late" ||
+          r.status === "half-day"
+      ).length;
+      return {
+        label: `${c.courseCode} · ${c.courseName}`,
+        percent: total === 0 ? 0 : Math.round((attended / total) * 100),
+      };
     });
-  }, [classRoom, studentRecords]);
+  }, [studentCourses, studentRecords]);
 
   const heatmapDays = useMemo(() => {
     const days: { date: string; percent: number; label: string }[] = [];
@@ -140,10 +142,15 @@ export function StudentDetailDrawer({
                   <h2 className="font-display text-xl font-bold text-white">
                     {student.name}
                   </h2>
-                  <p className="text-slate-400">{student.rollNo}</p>
-                  <div className="mt-2 flex gap-2">
+                  <p className="font-mono text-slate-400">
+                    {student.enrollmentNo}
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-2">
                     <span className="rounded-full bg-indigo-500/20 px-2 py-0.5 text-xs text-indigo-300">
-                      {classRoom?.name ?? "—"}
+                      {student.department}
+                    </span>
+                    <span className="rounded-full bg-cyan-500/20 px-2 py-0.5 text-xs text-cyan-300">
+                      {student.semester} Sem · {student.batch}
                     </span>
                     <span
                       className={`rounded-full px-2 py-0.5 text-xs ${
@@ -196,12 +203,17 @@ export function StudentDetailDrawer({
                   </div>
                   <div>
                     <p className="mb-2 text-sm font-medium text-slate-400">
-                      Subject-wise
+                      Course-wise
                     </p>
-                    {subjectStats.map((s) => (
-                      <div key={s.subject} className="mb-2">
+                    {courseStats.length === 0 && (
+                      <p className="text-xs text-slate-500">
+                        Not enrolled in any course yet.
+                      </p>
+                    )}
+                    {courseStats.map((s) => (
+                      <div key={s.label} className="mb-2">
                         <div className="flex justify-between text-sm">
-                          <span className="text-white">{s.subject}</span>
+                          <span className="text-white">{s.label}</span>
                           <span className="text-slate-400">{s.percent}%</span>
                         </div>
                         <div className="mt-1 h-1.5 rounded-full bg-white/10">

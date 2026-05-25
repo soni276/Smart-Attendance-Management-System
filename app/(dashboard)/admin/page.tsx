@@ -19,6 +19,8 @@ import {
 } from "recharts";
 import {
   AlertTriangle,
+  BookOpen,
+  GraduationCap,
   QrCode,
   RefreshCw,
   UserCheck,
@@ -51,7 +53,8 @@ import {
 } from "@/lib/utils";
 import type {
   AttendanceRecord,
-  ClassRoom,
+  Course,
+  Faculty,
   QRSession,
   Student,
 } from "@/types";
@@ -133,7 +136,8 @@ export default function AdminDashboardPage() {
 
   const data = useMemo(() => {
     const students = getAll<Student>(KEYS.STUDENTS);
-    const classes = getAll<ClassRoom>(KEYS.CLASSES);
+    const courses = getAll<Course>(KEYS.COURSES);
+    const faculty = getAll<Faculty>(KEYS.FACULTY);
     const attendance = getAll<AttendanceRecord>(KEYS.ATTENDANCE);
     const qrSessions = getAll<QRSession>(KEYS.QR_SESSIONS);
     const settings = getSettings();
@@ -178,19 +182,20 @@ export default function AdminDashboardPage() {
     });
 
     const todayRecords = attendance.filter((r) => r.date === today);
-    const classWiseToday = classes.map((cls) => {
-      const classRecs = todayRecords.filter((r) => r.classId === cls.id);
-      const total = classRecs.length || 1;
+    const courseWiseToday = courses.map((c) => {
+      const courseRecs = todayRecords.filter((r) => r.courseId === c.id);
+      const total = courseRecs.length || 1;
       return {
-        name: cls.name,
+        name: c.courseCode,
         present: Math.round(
-          (classRecs.filter((r) => r.status === "present").length / total) * 100
+          (courseRecs.filter((r) => r.status === "present").length / total) *
+            100
         ),
         late: Math.round(
-          (classRecs.filter((r) => r.status === "late").length / total) * 100
+          (courseRecs.filter((r) => r.status === "late").length / total) * 100
         ),
         absent: Math.round(
-          (classRecs.filter((r) => r.status === "absent").length / total) * 100
+          (courseRecs.filter((r) => r.status === "absent").length / total) * 100
         ),
       };
     });
@@ -228,7 +233,7 @@ export default function AdminDashboardPage() {
     });
 
     const studentMap = new Map(students.map((s) => [s.id, s]));
-    const classMap = new Map(classes.map((c) => [c.id, c]));
+    const courseMap = new Map(courses.map((c) => [c.id, c]));
 
     const recentActivity = [...attendance]
       .sort(
@@ -238,14 +243,16 @@ export default function AdminDashboardPage() {
       .slice(0, 20)
       .map((r) => {
         const student = studentMap.get(r.studentId);
-        const cls = classMap.get(r.classId);
+        const course = courseMap.get(r.courseId);
         const subject =
-          cls?.schedule.find((s) => s.subjectId === r.subjectId)?.subject ??
+          course?.schedule.find((s) => s.subjectId === r.subjectId)?.subject ??
           "—";
         return {
           ...r,
           studentName: student?.name ?? "Unknown",
-          className: cls?.name ?? "—",
+          courseLabel: course
+            ? `${course.courseCode}`
+            : "—",
           subject,
         };
       });
@@ -253,8 +260,8 @@ export default function AdminDashboardPage() {
     const activeSessions = qrSessions
       .filter((s) => s.isActive)
       .map((s) => {
-        const cls = classMap.get(s.classId);
-        const total = cls?.studentIds.length ?? 0;
+        const c = courseMap.get(s.courseId);
+        const total = c?.studentIds.length ?? 0;
         return {
           ...s,
           marked: s.markedStudentIds.length,
@@ -269,6 +276,8 @@ export default function AdminDashboardPage() {
     return {
       stats: {
         totalActive,
+        totalFaculty: faculty.length,
+        totalCourses: courses.length,
         todayPct,
         activeQr,
         defaulters,
@@ -279,9 +288,12 @@ export default function AdminDashboardPage() {
           defaulters: trendPercent(defaulters, defaultersYesterday),
         },
         minPercent: settings.minAttendancePercent,
+        institutionName: settings.institutionName,
+        academicYear: settings.academicYear,
+        semesterName: settings.semesterName,
       },
       weeklyTrend,
-      classWiseToday,
+      courseWiseToday,
       pieData,
       heatmapDays,
       recentActivity,
@@ -294,10 +306,11 @@ export default function AdminDashboardPage() {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h2 className="font-display text-2xl font-semibold text-white">
-            Overview
+            {data.stats.institutionName}
           </h2>
           <p className="text-sm text-slate-500">
-            Last updated {formatTime(lastRefresh)}
+            {data.stats.semesterName} · AY {data.stats.academicYear} · Last
+            updated {formatTime(lastRefresh)}
           </p>
         </div>
         <button
@@ -312,41 +325,60 @@ export default function AdminDashboardPage() {
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatsCard
-          title="Total Active Students"
+          title="Total Students"
           value={data.stats.totalActive}
-          subtitle="Enrolled and active"
+          subtitle="Enrolled across all courses"
           icon={Users}
           gradient="from-indigo-500 to-indigo-700"
           trend={data.stats.trends.students}
           delay={0}
         />
         <StatsCard
+          title="Total Faculty"
+          value={data.stats.totalFaculty}
+          subtitle="Professors & Lecturers"
+          icon={GraduationCap}
+          gradient="from-emerald-500 to-green-700"
+          delay={0.08}
+        />
+        <StatsCard
+          title="Active Courses"
+          value={data.stats.totalCourses}
+          subtitle="This semester"
+          icon={BookOpen}
+          gradient="from-fuchsia-500 to-purple-600"
+          delay={0.16}
+        />
+        <StatsCard
           title="Today's Attendance"
           value={data.stats.todayPct}
-          subtitle="Present + late vs active students"
+          subtitle="University-wide average"
           icon={UserCheck}
           gradient="from-cyan-500 to-blue-600"
           trend={data.stats.trends.attendance}
           suffix="%"
-          delay={0.08}
+          delay={0.24}
         />
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2">
         <StatsCard
           title="Active QR Sessions"
           value={data.stats.activeQr}
-          subtitle="Live attendance windows"
+          subtitle="Live take-attendance windows"
           icon={QrCode}
           gradient="from-purple-500 to-violet-700"
           trend={data.stats.trends.qr}
-          delay={0.16}
+          delay={0.32}
         />
         <StatsCard
           title="Defaulters"
           value={data.stats.defaulters}
-          subtitle={`Below ${data.stats.minPercent}% threshold`}
+          subtitle={`Below ${data.stats.minPercent}% university norm`}
           icon={AlertTriangle}
           gradient="from-rose-500 to-orange-600"
           trend={-data.stats.trends.defaulters}
-          delay={0.24}
+          delay={0.4}
         />
       </div>
 
@@ -392,10 +424,10 @@ export default function AdminDashboardPage() {
         </AttendanceChart>
 
         <AttendanceChart
-          title="Class-wise Today"
-          subtitle="Attendance breakdown by class"
+          title="Course-wise Today"
+          subtitle="Attendance breakdown by course"
         >
-          <BarChart data={data.classWiseToday}>
+          <BarChart data={data.courseWiseToday}>
             <CartesianGrid strokeDasharray="3 3" stroke={CHART_THEME.grid} />
             <XAxis dataKey="name" stroke={CHART_THEME.axis} tick={{ fill: CHART_THEME.tick, fontSize: 11 }} />
             <YAxis stroke={CHART_THEME.axis} tick={{ fill: CHART_THEME.tick, fontSize: 12 }} unit="%" />
@@ -488,7 +520,7 @@ export default function AdminDashboardPage() {
                         {item.studentName}
                       </p>
                       <p className="truncate text-xs text-slate-500">
-                        {item.className} · {item.subject}
+                        {item.courseLabel} · {item.subject}
                       </p>
                     </div>
                     <span
@@ -526,7 +558,9 @@ export default function AdminDashboardPage() {
                   key={session.id}
                   className="rounded-xl border border-indigo-500/20 bg-indigo-500/5 p-4"
                 >
-                  <p className="font-medium text-white">{session.className}</p>
+                  <p className="font-medium text-white">
+                    {session.courseCode}
+                  </p>
                   <p className="text-sm text-slate-400">{session.subject}</p>
                   <p className="mt-1 text-xs text-slate-500">
                     Started {formatTime(session.startTime)}

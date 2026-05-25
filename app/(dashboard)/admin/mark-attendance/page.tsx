@@ -16,7 +16,6 @@ import {
   KEYS,
   getAll,
   getCurrentUser,
-  save,
   saveMany,
 } from "@/lib/storage";
 import {
@@ -27,10 +26,10 @@ import {
 } from "@/lib/utils";
 import type {
   AttendanceRecord,
-  ClassRoom,
+  Course,
+  Faculty,
   ScheduleSlot,
   Student,
-  Teacher,
 } from "@/types";
 
 type AttendanceStatus = AttendanceRecord["status"];
@@ -66,8 +65,8 @@ const STATUS_OPTIONS: { value: AttendanceStatus; label: string; color: string }[
 export default function AdminMarkAttendancePage() {
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
-  const [classId, setClassId] = useState("");
-  const [teacherId, setTeacherId] = useState("");
+  const [courseId, setCourseId] = useState("");
+  const [facultyId, setFacultyId] = useState("");
   const [subjectId, setSubjectId] = useState("");
   const [date, setDate] = useState(getTodayString());
   const [marks, setMarks] = useState<Record<string, AttendanceStatus>>({});
@@ -81,8 +80,8 @@ export default function AdminMarkAttendancePage() {
     if (!user || user.role !== "admin") return null;
     return {
       user,
-      classes: getAll<ClassRoom>(KEYS.CLASSES),
-      teachers: getAll<Teacher>(KEYS.TEACHERS),
+      courses: getAll<Course>(KEYS.COURSES),
+      faculty: getAll<Faculty>(KEYS.FACULTY),
       students: getAll<Student>(KEYS.STUDENTS),
       records: getAll<AttendanceRecord>(KEYS.ATTENDANCE),
     };
@@ -92,41 +91,42 @@ export default function AdminMarkAttendancePage() {
     setLoading(false);
   }, []);
 
-  const selectedClass = useMemo(
-    () => data?.classes.find((c) => c.id === classId) ?? null,
-    [data, classId]
+  const selectedCourse = useMemo(
+    () => data?.courses.find((c) => c.id === courseId) ?? null,
+    [data, courseId]
   );
 
   const subjectOptions: ScheduleSlot[] = useMemo(() => {
-    if (!selectedClass) return [];
+    if (!selectedCourse) return [];
     const seen = new Set<string>();
-    return selectedClass.schedule.filter((s) => {
+    return selectedCourse.schedule.filter((s) => {
       if (seen.has(s.subjectId)) return false;
       seen.add(s.subjectId);
       return true;
     });
-  }, [selectedClass]);
+  }, [selectedCourse]);
 
-  const classStudents: Student[] = useMemo(() => {
-    if (!data || !selectedClass) return [];
-    const inClass = new Set(selectedClass.studentIds);
+  const courseStudents: Student[] = useMemo(() => {
+    if (!data || !selectedCourse) return [];
+    const inCourse = new Set(selectedCourse.studentIds);
     return data.students
-      .filter((s) => inClass.has(s.id) && s.isActive)
-      .sort((a, b) => a.rollNo.localeCompare(b.rollNo));
-  }, [data, selectedClass]);
+      .filter((s) => inCourse.has(s.id) && s.isActive)
+      .sort((a, b) => a.enrollmentNo.localeCompare(b.enrollmentNo));
+  }, [data, selectedCourse]);
 
-  // Load existing records when key fields change
   useEffect(() => {
-    if (!data || !classId || !subjectId || !date) {
+    if (!data || !courseId || !subjectId || !date) {
       setMarks({});
       return;
     }
     const existing = data.records.filter(
       (r) =>
-        r.classId === classId && r.subjectId === subjectId && r.date === date
+        r.courseId === courseId &&
+        r.subjectId === subjectId &&
+        r.date === date
     );
     const mp: Record<string, AttendanceStatus> = {};
-    classStudents.forEach((s) => {
+    courseStudents.forEach((s) => {
       mp[s.id] = "present";
     });
     existing.forEach((r) => {
@@ -134,28 +134,27 @@ export default function AdminMarkAttendancePage() {
     });
     setMarks(mp);
     setOverriding(existing.length > 0);
-  }, [data, classId, subjectId, date, classStudents]);
+  }, [data, courseId, subjectId, date, courseStudents]);
 
-  // Auto-pick teacher when class changes
   useEffect(() => {
-    if (!data || !selectedClass) return;
-    if (!teacherId || !data.teachers.find((t) => t.id === teacherId)) {
-      const t =
-        data.teachers.find((t) => t.id === selectedClass.teacherId) ??
-        data.teachers[0];
-      if (t) setTeacherId(t.id);
+    if (!data || !selectedCourse) return;
+    if (!facultyId || !data.faculty.find((f) => f.id === facultyId)) {
+      const f =
+        data.faculty.find((f) => f.id === selectedCourse.facultyId) ??
+        data.faculty[0];
+      if (f) setFacultyId(f.id);
     }
-  }, [data, selectedClass, teacherId]);
+  }, [data, selectedCourse, facultyId]);
 
   const visibleStudents = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return classStudents;
-    return classStudents.filter(
+    if (!q) return courseStudents;
+    return courseStudents.filter(
       (s) =>
         s.name.toLowerCase().includes(q) ||
-        s.rollNo.toLowerCase().includes(q)
+        s.enrollmentNo.toLowerCase().includes(q)
     );
-  }, [classStudents, search]);
+  }, [courseStudents, search]);
 
   const counts = useMemo(() => {
     const c = { present: 0, late: 0, absent: 0, halfDay: 0 };
@@ -175,54 +174,58 @@ export default function AdminMarkAttendancePage() {
       <EmptyState
         icon={ShieldAlert}
         title="Admin only"
-        description="Sign in with an admin account to mark or override attendance."
+        description="Sign in with an admin account to take or override attendance."
       />
     );
   }
 
-  if (data.classes.length === 0) {
+  if (data.courses.length === 0) {
     return (
       <EmptyState
         icon={Users}
-        title="No classes"
-        description="Create a class first before marking attendance."
+        title="No courses"
+        description="Create a course first before taking attendance."
       />
     );
   }
 
   const setAll = (status: AttendanceStatus) => {
     const m: Record<string, AttendanceStatus> = {};
-    classStudents.forEach((s) => {
+    courseStudents.forEach((s) => {
       m[s.id] = status;
     });
     setMarks(m);
     toast.success(
-      `Marked all ${classStudents.length} students as ${status}`
+      `Marked all ${courseStudents.length} students as ${status}`
     );
   };
 
   const handleSubmit = () => {
-    if (!classId || !subjectId || !teacherId || !date) {
-      toast.error("Select class, subject, teacher and date");
+    if (!courseId || !subjectId || !facultyId || !date) {
+      toast.error("Select course, subject, faculty and date");
       return;
     }
-    if (classStudents.length === 0) {
-      toast.error("This class has no active students");
+    if (courseStudents.length === 0) {
+      toast.error("This course has no enrolled students");
       return;
     }
 
     const all = getAll<AttendanceRecord>(KEYS.ATTENDANCE);
     const otherRecords = all.filter(
       (r) =>
-        !(r.classId === classId && r.subjectId === subjectId && r.date === date)
+        !(
+          r.courseId === courseId &&
+          r.subjectId === subjectId &&
+          r.date === date
+        )
     );
 
     const now = new Date().toISOString();
-    const updated: AttendanceRecord[] = classStudents.map((s) => {
+    const updated: AttendanceRecord[] = courseStudents.map((s) => {
       const existing = all.find(
         (r) =>
           r.studentId === s.id &&
-          r.classId === classId &&
+          r.courseId === courseId &&
           r.subjectId === subjectId &&
           r.date === date
       );
@@ -230,11 +233,12 @@ export default function AdminMarkAttendancePage() {
       return {
         id: existing?.id ?? generateId(),
         studentId: s.id,
-        classId,
+        courseId,
         subjectId,
         date,
         status,
-        markedBy: teacherId,
+        markedBy: facultyId,
+        facultyId,
         markedAt: now,
         method: "manual",
       };
@@ -263,39 +267,41 @@ export default function AdminMarkAttendancePage() {
     >
       <div>
         <h2 className="font-display text-2xl font-semibold text-white">
-          Mark Attendance (Admin)
+          Take Attendance (Admin)
         </h2>
         <p className="mt-1 text-sm text-slate-400">
-          Manually mark or override attendance for any class, subject and date.
+          Manually take or override attendance for any course, subject and date.
         </p>
       </div>
 
       <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-5">
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <div>
-            <label className="mb-1 block text-xs text-slate-500">Class</label>
+            <label className="mb-1 block text-xs text-slate-500">Course</label>
             <select
-              value={classId}
+              value={courseId}
               onChange={(e) => {
-                setClassId(e.target.value);
+                setCourseId(e.target.value);
                 setSubjectId("");
               }}
               className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white"
             >
-              <option value="">Select class</option>
-              {data.classes.map((c) => (
+              <option value="">Select course</option>
+              {data.courses.map((c) => (
                 <option key={c.id} value={c.id}>
-                  {c.name} · Section {c.section}
+                  {c.courseCode} · {c.courseName}
                 </option>
               ))}
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-xs text-slate-500">Subject</label>
+            <label className="mb-1 block text-xs text-slate-500">
+              Subject / Paper
+            </label>
             <select
               value={subjectId}
               onChange={(e) => setSubjectId(e.target.value)}
-              disabled={!classId}
+              disabled={!courseId}
               className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white disabled:opacity-50"
             >
               <option value="">Select subject</option>
@@ -307,16 +313,16 @@ export default function AdminMarkAttendancePage() {
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-xs text-slate-500">Teacher</label>
+            <label className="mb-1 block text-xs text-slate-500">Faculty</label>
             <select
-              value={teacherId}
-              onChange={(e) => setTeacherId(e.target.value)}
+              value={facultyId}
+              onChange={(e) => setFacultyId(e.target.value)}
               className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white"
             >
-              <option value="">Select teacher</option>
-              {data.teachers.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
+              <option value="">Select faculty</option>
+              {data.faculty.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.name} · {f.designation}
                 </option>
               ))}
             </select>
@@ -335,13 +341,13 @@ export default function AdminMarkAttendancePage() {
         {overriding && (
           <div className="mt-4 flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
             <ShieldAlert className="h-4 w-4" />
-            Existing records detected for this class/subject/date. Saving will
+            Existing records detected for this course/subject/date. Saving will
             overwrite them.
           </div>
         )}
       </div>
 
-      {classId && subjectId && (
+      {courseId && subjectId && (
         <>
           <div className="grid gap-3 sm:grid-cols-4">
             <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4 text-center">
@@ -376,7 +382,7 @@ export default function AdminMarkAttendancePage() {
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search students by name or roll…"
+                placeholder="Search students by name or enrollment no…"
                 className="w-full rounded-lg border border-white/10 bg-white/5 py-2 pl-9 pr-3 text-sm text-white placeholder:text-slate-500 focus:border-indigo-500/50 focus:outline-none"
               />
             </div>
@@ -413,7 +419,7 @@ export default function AdminMarkAttendancePage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-white/[0.06] bg-white/[0.02] text-left text-xs uppercase tracking-wide text-slate-500">
-                    <th className="p-4">Roll</th>
+                    <th className="p-4">Enrollment</th>
                     <th className="p-4">Student</th>
                     <th className="p-4">Current</th>
                     <th className="p-4">Mark</th>
@@ -430,7 +436,9 @@ export default function AdminMarkAttendancePage() {
                         transition={{ delay: i * 0.01 }}
                         className="border-b border-white/[0.04]"
                       >
-                        <td className="p-4 text-slate-400">{s.rollNo}</td>
+                        <td className="p-4 font-mono text-slate-400">
+                          {s.enrollmentNo}
+                        </td>
                         <td className="p-4 text-white">
                           <div className="flex items-center gap-3">
                             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-xs font-bold">
@@ -479,11 +487,11 @@ export default function AdminMarkAttendancePage() {
         </>
       )}
 
-      {(!classId || !subjectId) && (
+      {(!courseId || !subjectId) && (
         <EmptyState
           icon={ClipboardCheck}
-          title="Pick class & subject"
-          description="Select a class and subject to begin marking attendance."
+          title="Pick course & subject"
+          description="Select a course and subject/paper to begin taking attendance."
         />
       )}
     </motion.div>

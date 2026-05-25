@@ -52,7 +52,7 @@ export function getTodayString(): string {
 }
 
 export function getWindowSlot(
-  _classId: string,
+  _courseId: string,
   date: string,
   startTime: string,
   endTime: string

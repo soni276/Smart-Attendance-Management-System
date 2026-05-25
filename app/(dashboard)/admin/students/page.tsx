@@ -39,9 +39,24 @@ import {
   saveMany,
 } from "@/lib/storage";
 import { generateId } from "@/lib/utils";
-import type { AttendanceRecord, ClassRoom, Student } from "@/types";
+import type {
+  AttendanceRecord,
+  Course,
+  Semester,
+  Student,
+} from "@/types";
 
-const PAGE_SIZE = 10;
+const PAGE_SIZE = 12;
+const SEMESTERS: Semester[] = [
+  "1st",
+  "2nd",
+  "3rd",
+  "4th",
+  "5th",
+  "6th",
+  "7th",
+  "8th",
+];
 
 function useDebounce<T>(value: T, ms: number): T {
   const [debounced, setDebounced] = useState(value);
@@ -56,12 +71,16 @@ export default function AdminStudentsPage() {
   const searchParams = useSearchParams();
   const [refreshKey, setRefreshKey] = useState(0);
   const [search, setSearch] = useState("");
-  const [classFilter, setClassFilter] = useState("all");
+  const [courseFilter, setCourseFilter] = useState("all");
+  const [departmentFilter, setDepartmentFilter] = useState("all");
+  const [semesterFilter, setSemesterFilter] = useState<Semester | "all">("all");
+  const [batchFilter, setBatchFilter] = useState("all");
 
   useEffect(() => {
-    const param = searchParams.get("class");
-    if (param) setClassFilter(param);
+    const param = searchParams.get("course");
+    if (param) setCourseFilter(param);
   }, [searchParams]);
+
   const [statusFilter, setStatusFilter] = useState("all");
   const [attendanceFilter, setAttendanceFilter] = useState("all");
   const [view, setView] = useState<"table" | "grid">("table");
@@ -79,22 +98,38 @@ export default function AdminStudentsPage() {
   const debouncedSearch = useDebounce(search, 300);
   const minPercent = getSettings().minAttendancePercent;
 
-  const { students, classes, records } = useMemo(() => {
+  const { students, courses, records } = useMemo(() => {
     return {
       students: getAll<Student>(KEYS.STUDENTS),
-      classes: getAll<ClassRoom>(KEYS.CLASSES),
+      courses: getAll<Course>(KEYS.COURSES),
       records: getAll<AttendanceRecord>(KEYS.ATTENDANCE),
     };
   }, [refreshKey]);
 
+  const departments = useMemo(
+    () => Array.from(new Set(students.map((s) => s.department))).sort(),
+    [students]
+  );
+  const batches = useMemo(
+    () => Array.from(new Set(students.map((s) => s.batch))).sort(),
+    [students]
+  );
+
   const enriched: StudentWithMeta[] = useMemo(() => {
-    return students.map((s) => ({
-      ...s,
-      attendancePercent: getStudentAttendancePercent(s.id, records),
-      className:
-        classes.find((c) => c.id === s.classId)?.name ?? "—",
-    }));
-  }, [students, classes, records]);
+    return students.map((s) => {
+      const studentCourses = courses.filter((c) =>
+        s.courseIds.includes(c.id)
+      );
+      const primary = studentCourses[0];
+      return {
+        ...s,
+        attendancePercent: getStudentAttendancePercent(s.id, records),
+        primaryCourseLabel: primary
+          ? `${primary.courseCode}`
+          : `${s.department}`,
+      };
+    });
+  }, [students, courses, records]);
 
   const filtered = useMemo(() => {
     let list = [...enriched];
@@ -103,16 +138,21 @@ export default function AdminStudentsPage() {
       list = list.filter(
         (s) =>
           s.name.toLowerCase().includes(q) ||
-          s.rollNo.toLowerCase().includes(q) ||
+          s.enrollmentNo.toLowerCase().includes(q) ||
           s.email.toLowerCase().includes(q)
       );
     }
-    if (classFilter !== "all") {
-      list = list.filter(
-        (s) =>
-          s.classId === classFilter ||
-          s.className.toLowerCase() === classFilter.toLowerCase()
-      );
+    if (courseFilter !== "all") {
+      list = list.filter((s) => s.courseIds.includes(courseFilter));
+    }
+    if (departmentFilter !== "all") {
+      list = list.filter((s) => s.department === departmentFilter);
+    }
+    if (semesterFilter !== "all") {
+      list = list.filter((s) => s.semester === semesterFilter);
+    }
+    if (batchFilter !== "all") {
+      list = list.filter((s) => s.batch === batchFilter);
     }
     if (statusFilter === "active") list = list.filter((s) => s.isActive);
     if (statusFilter === "inactive") list = list.filter((s) => !s.isActive);
@@ -139,7 +179,10 @@ export default function AdminStudentsPage() {
   }, [
     enriched,
     debouncedSearch,
-    classFilter,
+    courseFilter,
+    departmentFilter,
+    semesterFilter,
+    batchFilter,
     statusFilter,
     attendanceFilter,
     sortKey,
@@ -150,7 +193,18 @@ export default function AdminStudentsPage() {
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-  useEffect(() => setPage(1), [debouncedSearch, classFilter, statusFilter, attendanceFilter]);
+  useEffect(
+    () => setPage(1),
+    [
+      debouncedSearch,
+      courseFilter,
+      departmentFilter,
+      semesterFilter,
+      batchFilter,
+      statusFilter,
+      attendanceFilter,
+    ]
+  );
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -166,27 +220,31 @@ export default function AdminStudentsPage() {
     const student: Student = {
       id: id ?? generateId(),
       name: data.name.trim(),
-      rollNo: data.rollNo.trim(),
+      enrollmentNo: data.enrollmentNo.trim().toUpperCase(),
       email: data.email.trim(),
-      phone: data.phone || undefined,
-      classId: data.classId,
-      section: data.section,
-      department: data.department,
+      phone: data.phone || "",
+      department: data.department.trim(),
+      semester: data.semester,
+      batch: data.batch.trim(),
+      courseIds: [...data.courseIds],
       photoURL: data.photoURL,
       faceDescriptor: data.faceDescriptor,
       enrolledAt: id
-        ? students.find((s) => s.id === id)?.enrolledAt ?? new Date().toISOString()
+        ? students.find((s) => s.id === id)?.enrolledAt ??
+          new Date().toISOString()
         : new Date().toISOString(),
       isActive: data.isActive,
     };
     save(KEYS.STUDENTS, student);
 
-    const allClasses = getAll<ClassRoom>(KEYS.CLASSES);
-    allClasses.forEach((cls) => {
+    const newCourseIds = new Set(student.courseIds);
+    const allCourses = getAll<Course>(KEYS.COURSES);
+    allCourses.forEach((cls) => {
+      const inCourse = newCourseIds.has(cls.id);
       const ids = cls.studentIds.filter((sid) => sid !== student.id);
-      if (cls.id === student.classId) ids.push(student.id);
-      if (ids.length !== cls.studentIds.length || cls.id === student.classId) {
-        save(KEYS.CLASSES, { ...cls, studentIds: [...new Set(ids)] });
+      if (inCourse) ids.push(student.id);
+      if (ids.length !== cls.studentIds.length) {
+        save(KEYS.COURSES, { ...cls, studentIds: [...new Set(ids)] });
       }
     });
 
@@ -201,10 +259,10 @@ export default function AdminStudentsPage() {
       (r) => r.studentId !== deleteStudent.id
     );
     saveMany(KEYS.ATTENDANCE, att);
-    const allClasses = getAll<ClassRoom>(KEYS.CLASSES);
-    allClasses.forEach((cls) => {
+    const allCourses = getAll<Course>(KEYS.COURSES);
+    allCourses.forEach((cls) => {
       if (cls.studentIds.includes(deleteStudent.id)) {
-        save(KEYS.CLASSES, {
+        save(KEYS.COURSES, {
           ...cls,
           studentIds: cls.studentIds.filter((id) => id !== deleteStudent.id),
         });
@@ -218,15 +276,23 @@ export default function AdminStudentsPage() {
   const handleCsvImport = (newStudents: Student[]) => {
     const existing = getAll<Student>(KEYS.STUDENTS);
     saveMany(KEYS.STUDENTS, [...existing, ...newStudents]);
-    const allClasses = getAll<ClassRoom>(KEYS.CLASSES);
+    const allCourses = getAll<Course>(KEYS.COURSES);
     newStudents.forEach((s) => {
-      const cls = allClasses.find((c) => c.id === s.classId);
-      if (cls && !cls.studentIds.includes(s.id)) {
-        save(KEYS.CLASSES, { ...cls, studentIds: [...cls.studentIds, s.id] });
-      }
+      s.courseIds.forEach((cid) => {
+        const c = allCourses.find((x) => x.id === cid);
+        if (c && !c.studentIds.includes(s.id)) {
+          save(KEYS.COURSES, {
+            ...c,
+            studentIds: [...c.studentIds, s.id],
+          });
+        }
+      });
     });
     refresh();
-    return { imported: newStudents.length, failed: [] as { row: number; reason: string }[] };
+    return {
+      imported: newStudents.length,
+      failed: [] as { row: number; reason: string }[],
+    };
   };
 
   return (
@@ -262,20 +328,58 @@ export default function AdminStudentsPage() {
       <div className="flex flex-wrap items-center gap-3">
         <input
           type="search"
-          placeholder="Search name, roll, email…"
+          placeholder="Search name, enrollment no, email…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="min-w-[200px] flex-1 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white outline-none focus:border-indigo-500/50"
         />
         <select
-          value={classFilter}
-          onChange={(e) => setClassFilter(e.target.value)}
+          value={departmentFilter}
+          onChange={(e) => setDepartmentFilter(e.target.value)}
           className="rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white"
         >
-          <option value="all">All classes</option>
-          {classes.map((c) => (
+          <option value="all">All Departments</option>
+          {departments.map((d) => (
+            <option key={d} value={d}>
+              {d}
+            </option>
+          ))}
+        </select>
+        <select
+          value={semesterFilter}
+          onChange={(e) =>
+            setSemesterFilter(e.target.value as Semester | "all")
+          }
+          className="rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white"
+        >
+          <option value="all">All Semesters</option>
+          {SEMESTERS.map((s) => (
+            <option key={s} value={s}>
+              {s} Sem
+            </option>
+          ))}
+        </select>
+        <select
+          value={batchFilter}
+          onChange={(e) => setBatchFilter(e.target.value)}
+          className="rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white"
+        >
+          <option value="all">All Batches</option>
+          {batches.map((b) => (
+            <option key={b} value={b}>
+              {b}
+            </option>
+          ))}
+        </select>
+        <select
+          value={courseFilter}
+          onChange={(e) => setCourseFilter(e.target.value)}
+          className="rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white"
+        >
+          <option value="all">All Courses</option>
+          {courses.map((c) => (
             <option key={c.id} value={c.id}>
-              {c.name} · {c.section}
+              {c.courseCode} · {c.courseName}
             </option>
           ))}
         </select>
@@ -401,13 +505,13 @@ export default function AdminStudentsPage() {
           setEditStudent(null);
         }}
         onSave={handleSaveStudent}
-        classes={classes}
+        courses={courses}
         editStudent={editStudent}
       />
       <CsvImportModal
         open={csvOpen}
         onClose={() => setCsvOpen(false)}
-        classes={classes}
+        courses={courses}
         onImport={handleCsvImport}
       />
       <DeleteStudentModal
@@ -417,11 +521,7 @@ export default function AdminStudentsPage() {
       />
       <StudentDetailDrawer
         student={detailStudent}
-        classRoom={
-          detailStudent
-            ? classes.find((c) => c.id === detailStudent.classId) ?? null
-            : null
-        }
+        courses={courses}
         records={records}
         onClose={() => setDetailStudent(null)}
       />

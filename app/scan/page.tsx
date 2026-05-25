@@ -32,7 +32,7 @@ import {
 } from "@/lib/utils";
 import type {
   AttendanceRecord,
-  ClassRoom,
+  Course,
   QRPayload,
   QRSession,
   Student,
@@ -232,8 +232,8 @@ function GeoFenceVisual({
       )}
       <p className="absolute -bottom-8 w-full text-center text-sm text-slate-400">
         {distance !== null
-          ? `You are ${distance}m from classroom (max ${radiusM}m allowed)`
-          : `Classroom zone · max ${radiusM}m`}
+          ? `You are ${distance}m from campus (max ${radiusM}m allowed)`
+          : `Campus zone · max ${radiusM}m`}
       </p>
     </div>
   );
@@ -271,38 +271,41 @@ function ScanPageContent() {
     [qrString]
   );
 
-  const classStudents = useMemo(() => {
+  const courseStudents = useMemo(() => {
     if (!qrPayload) return [];
     return getAll<Student>(KEYS.STUDENTS).filter(
-      (s) => s.classId === qrPayload.classId && s.isActive
+      (s) => s.courseIds.includes(qrPayload.courseId) && s.isActive
     );
   }, [qrPayload, flow]);
 
   const selectedStudent = useMemo(
-    () => classStudents.find((s) => s.id === selectedStudentId) ?? null,
-    [classStudents, selectedStudentId]
+    () => courseStudents.find((s) => s.id === selectedStudentId) ?? null,
+    [courseStudents, selectedStudentId]
   );
 
-  const classRoom = useMemo(() => {
+  const course = useMemo(() => {
     if (!qrPayload) return null;
     return (
-      getAll<ClassRoom>(KEYS.CLASSES).find((c) => c.id === qrPayload.classId) ??
+      getAll<Course>(KEYS.COURSES).find((c) => c.id === qrPayload.courseId) ??
       null
     );
   }, [qrPayload]);
 
-  const classLabel =
-    sessionMeta?.className ?? classRoom?.name ?? "Your class";
+  const courseLabel = sessionMeta
+    ? `${sessionMeta.courseCode} · ${sessionMeta.courseName}`
+    : course
+      ? `${course.courseCode} · ${course.courseName}`
+      : "Your course";
 
   const filteredStudents = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return classStudents;
-    return classStudents.filter(
+    if (!q) return courseStudents;
+    return courseStudents.filter(
       (s) =>
         s.name.toLowerCase().includes(q) ||
-        s.rollNo.toLowerCase().includes(q)
+        s.enrollmentNo.toLowerCase().includes(q)
     );
-  }, [classStudents, search]);
+  }, [courseStudents, search]);
 
   const currentStep = useMemo((): StepKey => {
     if (flow === "success") return "done";
@@ -314,7 +317,7 @@ function ScanPageContent() {
 
   useEffect(() => {
     if (!qrParam) {
-      setError("No QR code found. Please scan the classroom QR again.");
+      setError("No QR code found. Please scan the lecture QR again.");
       setRetryable(false);
       setFlow("error");
       return;
@@ -391,12 +394,13 @@ function ScanPageContent() {
       if (!session && qrPayload) {
         session = {
           id: data.sessionId,
-          classId: qrPayload.classId,
+          courseId: qrPayload.courseId,
           subjectId: qrPayload.subjectId,
           subject: "",
-          teacherId: qrPayload.teacherId,
-          teacherName: "",
-          className: classRoom?.name ?? "",
+          facultyId: qrPayload.facultyId,
+          facultyName: "",
+          courseName: course?.courseName ?? "",
+          courseCode: course?.courseCode ?? "",
           date: new Date().toISOString().slice(0, 10),
           windowSlot: qrPayload.windowSlot,
           startTime: new Date().toISOString(),
@@ -479,11 +483,12 @@ function ScanPageContent() {
         save(KEYS.ATTENDANCE, {
           id: generateId(),
           studentId: selectedStudentId,
-          classId: session.classId,
+          courseId: session.courseId,
           subjectId: session.subjectId,
           date: session.date,
           status: data.status,
-          markedBy: session.teacherId,
+          markedBy: session.facultyId,
+          facultyId: session.facultyId,
           markedAt: data.markedAt,
           method: "face-qr",
           ...(data.status === "late" && session
@@ -538,7 +543,7 @@ function ScanPageContent() {
     validateQR();
   };
 
-  const verifyStudents = classStudents;
+  const verifyStudents = courseStudents;
 
   return (
     <div className="mx-auto flex min-h-[100dvh] max-w-md flex-col bg-gradient-to-b from-slate-950 via-indigo-950/40 to-slate-950">
@@ -558,7 +563,7 @@ function ScanPageContent() {
                 Who are you?
               </h1>
               <p className="mt-2 text-center text-sm text-slate-400">
-                Search by name or roll number
+                Search by name or enrollment number
               </p>
 
               <div className="relative mt-6">
@@ -588,7 +593,9 @@ function ScanPageContent() {
                       </div>
                       <div>
                         <p className="font-medium text-white">{s.name}</p>
-                        <p className="text-sm text-slate-400">{s.rollNo}</p>
+                        <p className="font-mono text-sm text-slate-400">
+                          {s.enrollmentNo}
+                        </p>
                       </div>
                     </button>
                   </li>
@@ -621,8 +628,10 @@ function ScanPageContent() {
                   <p className="mt-3 font-display text-xl font-semibold text-white">
                     {selectedStudent.name}
                   </p>
-                  <p className="text-slate-400">{selectedStudent.rollNo}</p>
-                  <p className="text-sm text-indigo-300">{classLabel}</p>
+                  <p className="font-mono text-slate-400">
+                    {selectedStudent.enrollmentNo}
+                  </p>
+                  <p className="text-sm text-indigo-300">{courseLabel}</p>
                 </div>
                 <div className="mt-6 grid grid-cols-2 gap-3">
                   <button
@@ -736,8 +745,8 @@ function ScanPageContent() {
                 <p className="font-medium text-white">
                   {sessionMeta?.subject ?? "—"}
                 </p>
-                <p className="mt-3 text-sm text-slate-500">Class</p>
-                <p className="text-white">{classLabel}</p>
+                <p className="mt-3 text-sm text-slate-500">Course</p>
+                <p className="text-white">{courseLabel}</p>
                 <p className="mt-3 text-sm text-slate-500">Time</p>
                 <p className="text-white">{formatTime(markResult.markedAt)}</p>
                 <p className="mt-3 text-sm text-slate-500">Status</p>
@@ -802,7 +811,7 @@ function ScanPageContent() {
                   className="flex min-h-[52px] w-full items-center justify-center gap-2 rounded-2xl border border-white/10 text-base text-slate-300"
                 >
                   <AlertCircle className="h-5 w-5" />
-                  Contact Teacher
+                  Contact Faculty
                 </button>
               </div>
             </motion.div>

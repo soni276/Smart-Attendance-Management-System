@@ -32,22 +32,20 @@ function resolveStatus(session: QRSession): AttendanceRecord["status"] {
 
 function hasThreeConsecutiveAbsences(
   studentId: string,
-  classId: string,
+  courseId: string,
   subjectId: string
 ): boolean {
   const records = getAll<AttendanceRecord>(KEYS.ATTENDANCE)
     .filter(
       (r) =>
         r.studentId === studentId &&
-        r.classId === classId &&
+        r.courseId === courseId &&
         r.subjectId === subjectId
     )
     .sort((a, b) => b.date.localeCompare(a.date));
 
   const recent = records.slice(0, 3);
-  return (
-    recent.length >= 3 && recent.every((r) => r.status === "absent")
-  );
+  return recent.length >= 3 && recent.every((r) => r.status === "absent");
 }
 
 export async function POST(request: Request) {
@@ -96,11 +94,12 @@ export async function POST(request: Request) {
     const record: AttendanceRecord = {
       id: generateId(),
       studentId: body.studentId,
-      classId: session.classId,
+      courseId: session.courseId,
       subjectId: session.subjectId,
       date: session.date,
       status,
-      markedBy: session.teacherId,
+      markedBy: session.facultyId,
+      facultyId: session.facultyId,
       markedAt,
       method: "face-qr",
       ...(status === "late"
@@ -123,7 +122,7 @@ export async function POST(request: Request) {
     if (
       hasThreeConsecutiveAbsences(
         body.studentId,
-        session.classId,
+        session.courseId,
         session.subjectId
       )
     ) {

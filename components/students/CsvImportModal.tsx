@@ -5,19 +5,41 @@ import Papa, { type ParseResult } from "papaparse";
 import { motion } from "framer-motion";
 import { Upload, X } from "lucide-react";
 import { generateId } from "@/lib/utils";
-import type { ClassRoom, Student } from "@/types";
+import type { Course, Semester, Student } from "@/types";
 
 interface CsvImportModalProps {
   open: boolean;
   onClose: () => void;
-  classes: ClassRoom[];
-  onImport: (students: Student[]) => { imported: number; failed: { row: number; reason: string }[] };
+  courses: Course[];
+  onImport: (students: Student[]) => {
+    imported: number;
+    failed: { row: number; reason: string }[];
+  };
+}
+
+const SEMESTER_VALUES: Semester[] = [
+  "1st",
+  "2nd",
+  "3rd",
+  "4th",
+  "5th",
+  "6th",
+  "7th",
+  "8th",
+];
+
+function normaliseSemester(input: string): Semester | null {
+  const v = input.trim().toLowerCase().replace(/\s|semester|sem/g, "");
+  const match = SEMESTER_VALUES.find(
+    (s) => s.toLowerCase() === v || s.toLowerCase().replace(/(st|nd|rd|th)/, "") === v
+  );
+  return match ?? null;
 }
 
 export function CsvImportModal({
   open,
   onClose,
-  classes,
+  courses,
   onImport,
 }: CsvImportModalProps) {
   const [rows, setRows] = useState<Record<string, string>[]>([]);
@@ -36,11 +58,16 @@ export function CsvImportModal({
     const lower = (s: string) => s.toLowerCase().replace(/\s/g, "");
     hdrs.forEach((h) => {
       const l = lower(h);
-      if (l.includes("name")) m.name = h;
-      if (l.includes("roll")) m.rollNo = h;
+      if (l.includes("name") && !l.includes("course")) m.name = h;
+      if (l.includes("enroll") || l.includes("regno") || l.includes("regn"))
+        m.enrollmentNo = h;
       if (l.includes("email")) m.email = h;
-      if (l.includes("class")) m.className = h;
-      if (l.includes("section")) m.section = h;
+      if (l.includes("phone") || l.includes("mobile")) m.phone = h;
+      if (l.includes("dept") || l.includes("department")) m.department = h;
+      if (l.includes("sem")) m.semester = h;
+      if (l.includes("batch")) m.batch = h;
+      if (l.includes("course") && (l.includes("code") || l === "course"))
+        m.courseCode = h;
     });
     setMapping(m);
   };
@@ -68,8 +95,8 @@ export function CsvImportModal({
         ? JSON.parse(localStorage.getItem("sas_students") ?? "[]")
         : []
     ) as Student[];
-    const seenRolls = new Set<string>(
-      existing.map((s) => s.rollNo.toLowerCase())
+    const seenEnroll = new Set<string>(
+      existing.map((s) => s.enrollmentNo.toLowerCase())
     );
     const seenEmails = new Set<string>(
       existing.map((s) => s.email.toLowerCase())
@@ -78,20 +105,33 @@ export function CsvImportModal({
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
       const name = (row[mapping.name] ?? "").trim();
-      const rollNo = (row[mapping.rollNo] ?? "").trim();
+      const enrollmentNo = (row[mapping.enrollmentNo] ?? "").trim();
       const email = (row[mapping.email] ?? "").trim();
-      const className = (row[mapping.className] ?? "").trim();
-      const section = (row[mapping.section] ?? "").trim();
+      const phone = (row[mapping.phone] ?? "").trim();
+      const department = (row[mapping.department] ?? "").trim();
+      const semesterRaw = (row[mapping.semester] ?? "").trim();
+      const batch = (row[mapping.batch] ?? "").trim();
+      const courseCode = (row[mapping.courseCode] ?? "").trim();
 
-      if (!name || !rollNo || !email) {
+      if (!name || !enrollmentNo || !email) {
         failed.push({ row: i + 1, reason: "Missing required fields" });
         continue;
       }
+      if (!department) {
+        failed.push({ row: i + 1, reason: "Department column is empty" });
+        continue;
+      }
+      if (!batch) {
+        failed.push({ row: i + 1, reason: "Batch column is empty" });
+        continue;
+      }
 
-      if (seenRolls.has(rollNo.toLowerCase())) {
+      const semester = normaliseSemester(semesterRaw) ?? "1st";
+
+      if (seenEnroll.has(enrollmentNo.toLowerCase())) {
         failed.push({
           row: i + 1,
-          reason: `Duplicate roll number: ${rollNo}`,
+          reason: `Duplicate enrollment number: ${enrollmentNo}`,
         });
         continue;
       }
@@ -100,33 +140,33 @@ export function CsvImportModal({
         continue;
       }
 
-      if (!className) {
-        failed.push({ row: i + 1, reason: "Class column is empty" });
-        continue;
+      const courseIds: string[] = [];
+      if (courseCode) {
+        const codes = courseCode
+          .split(/[,;]/)
+          .map((c) => c.trim().toUpperCase())
+          .filter(Boolean);
+        for (const code of codes) {
+          const course = courses.find(
+            (c) => c.courseCode.toUpperCase() === code
+          );
+          if (course) courseIds.push(course.id);
+        }
       }
 
-      const cls = classes.find(
-        (c) =>
-          c.name.toLowerCase() === className.toLowerCase() ||
-          (className && c.name.toLowerCase().includes(className.toLowerCase()))
-      );
-
-      if (!cls) {
-        failed.push({ row: i + 1, reason: `Class not found: ${className}` });
-        continue;
-      }
-
-      seenRolls.add(rollNo.toLowerCase());
+      seenEnroll.add(enrollmentNo.toLowerCase());
       seenEmails.add(email.toLowerCase());
 
       toCreate.push({
         id: generateId(),
         name,
-        rollNo,
+        enrollmentNo: enrollmentNo.toUpperCase(),
         email,
-        classId: cls.id,
-        section: section || cls.section,
-        department: cls.department,
+        phone,
+        department,
+        semester,
+        batch,
+        courseIds,
         photoURL: "",
         faceDescriptor: null,
         enrolledAt: new Date().toISOString(),
@@ -134,7 +174,7 @@ export function CsvImportModal({
       });
 
       setProgress(Math.round(((i + 1) / rows.length) * 100));
-      await new Promise((r) => setTimeout(r, 10));
+      await new Promise((r) => setTimeout(r, 5));
     }
 
     const res = onImport(toCreate);
@@ -156,7 +196,7 @@ export function CsvImportModal({
       >
         <div className="flex items-center justify-between border-b border-white/10 px-6 py-4">
           <h2 className="font-display text-lg font-semibold text-white">
-            Import CSV
+            Import Students CSV
           </h2>
           <button type="button" onClick={onClose}>
             <X className="h-5 w-5 text-slate-400" />
@@ -175,6 +215,14 @@ export function CsvImportModal({
               className="flex flex-col items-center rounded-2xl border-2 border-dashed border-white/15 p-10"
             >
               <Upload className="h-10 w-10 text-slate-500" />
+              <p className="mt-3 text-center text-xs text-slate-500">
+                Required columns:{" "}
+                <span className="font-mono">
+                  name, enrollmentNo, email, department, semester, batch
+                </span>
+                <br />
+                Optional: <span className="font-mono">phone, courseCode</span>
+              </p>
               <label className="mt-4 cursor-pointer rounded-xl bg-indigo-600 px-4 py-2 text-sm text-white">
                 Choose CSV file
                 <input
@@ -219,27 +267,36 @@ export function CsvImportModal({
               </div>
 
               <div className="grid grid-cols-2 gap-3">
-                {(["name", "rollNo", "email", "className", "section"] as const).map(
-                  (field) => (
-                    <div key={field}>
-                      <label className="text-xs text-slate-500">{field}</label>
-                      <select
-                        value={mapping[field] ?? ""}
-                        onChange={(e) =>
-                          setMapping((m) => ({ ...m, [field]: e.target.value }))
-                        }
-                        className="mt-1 w-full rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 text-sm text-white"
-                      >
-                        <option value="">—</option>
-                        {headers.map((h) => (
-                          <option key={h} value={h}>
-                            {h}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  )
-                )}
+                {(
+                  [
+                    "name",
+                    "enrollmentNo",
+                    "email",
+                    "phone",
+                    "department",
+                    "semester",
+                    "batch",
+                    "courseCode",
+                  ] as const
+                ).map((field) => (
+                  <div key={field}>
+                    <label className="text-xs text-slate-500">{field}</label>
+                    <select
+                      value={mapping[field] ?? ""}
+                      onChange={(e) =>
+                        setMapping((m) => ({ ...m, [field]: e.target.value }))
+                      }
+                      className="mt-1 w-full rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 text-sm text-white"
+                    >
+                      <option value="">—</option>
+                      {headers.map((h) => (
+                        <option key={h} value={h}>
+                          {h}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ))}
               </div>
 
               {importing && (

@@ -9,7 +9,13 @@ import {
   saveFewShot,
 } from "@/lib/storage-server";
 import { getTodayString } from "@/lib/utils";
-import type { ChatMessage, ClassRoom, QRSession, Student } from "@/types";
+import type {
+  ChatMessage,
+  Course,
+  Faculty,
+  QRSession,
+  Student,
+} from "@/types";
 
 interface ChatBody {
   message: string;
@@ -17,7 +23,9 @@ interface ChatBody {
   _store?: Record<string, unknown>;
 }
 
-function resolveApiKey(settings: ReturnType<typeof getSettings>): string | null {
+function resolveApiKey(
+  settings: ReturnType<typeof getSettings>
+): string | null {
   return settings.openaiApiKey?.trim() || process.env.OPENAI_API_KEY || null;
 }
 
@@ -25,7 +33,8 @@ function buildSystemPrompt(
   today: string,
   todayRecords: ReturnType<typeof getAttendanceByDate>,
   students: Student[],
-  classes: ClassRoom[],
+  courses: Course[],
+  faculty: Faculty[],
   settings: ReturnType<typeof getSettings>,
   fewShots: ReturnType<typeof getFewShots>,
   activeSessionsCount: number
@@ -51,10 +60,8 @@ function buildSystemPrompt(
     (s) => !markedTodayIds.has(s.id)
   );
 
-  const classMap = new Map(classes.map((c) => [c.id, c]));
   const formatStudent = (s: Student) => {
-    const cls = classMap.get(s.classId);
-    return `${s.name} (${s.rollNo}${cls ? ` · ${cls.name}` : ""})`;
+    return `${s.name} (enrollment ${s.enrollmentNo} · ${s.department} · ${s.semester} Sem · Batch ${s.batch})`;
   };
 
   const lateStudentsList = todayRecords
@@ -69,14 +76,21 @@ function buildSystemPrompt(
     .slice(0, 30)
     .map(
       (s) =>
-        `- ${s.name} | roll ${s.rollNo} | ${classMap.get(s.classId)?.name ?? "no-class"}`
+        `- ${s.name} | enrollment ${s.enrollmentNo} | ${s.department} | ${s.semester} Sem | Batch ${s.batch}`
     )
     .join("\n");
 
-  const classBlock = classes
+  const courseBlock = courses
+    .map((c) => {
+      const fac = faculty.find((f) => f.id === c.facultyId);
+      return `- ${c.courseCode} ${c.courseName} (${c.department}, ${c.semester} Sem, Batch ${c.batch}, ${c.credits} credits) — ${c.studentIds.length} students — Faculty: ${fac?.name ?? "TBD"}`;
+    })
+    .join("\n");
+
+  const facultyBlock = faculty
     .map(
-      (c) =>
-        `- ${c.name} (${c.section}, ${c.department}) — ${c.studentIds.length} students`
+      (f) =>
+        `- ${f.name} | ${f.designation} | ${f.department} | ${f.employeeId}`
     )
     .join("\n");
 
@@ -88,8 +102,8 @@ function buildSystemPrompt(
           .join("\n\n")
       : "No examples yet.";
 
-  return `You are SAS-Bot, the intelligent AI assistant for Smart Attendance System at ${settings.schoolName}.
-You have full access to real-time attendance data and may quote specific student names and roll numbers when answering.
+  return `You are CampusBot, the intelligent AI assistant for Campus Attendance System at ${settings.institutionName} (${settings.academicYear} · ${settings.semesterName}).
+You help faculty, students and admins with attendance queries. Use college / university terminology: courses not classes, faculty not teachers, enrollment number not roll number, batch not section, semester not standard. Refer to lectures, lab sessions, and papers — never homerooms.
 
 TODAY'S SUMMARY (${today}):
 - Total active students: ${activeCount}
@@ -97,10 +111,13 @@ TODAY'S SUMMARY (${today}):
 - Marked late today: ${lateIds.size}
 - Absent today: ${absentToday.length}
 - Active QR sessions: ${activeSessionsCount}
-- Attendance threshold: ${settings.minAttendancePercent}%
+- Minimum attendance (university norm): ${settings.minAttendancePercent}%
 
-CLASSES:
-${classBlock || "(no classes configured)"}
+COURSES:
+${courseBlock || "(no courses configured)"}
+
+FACULTY:
+${facultyBlock || "(no faculty configured)"}
 
 ABSENT STUDENTS TODAY (${absentToday.length}):
 ${absentStudentsList.length ? absentStudentsList.map((s) => `- ${s}`).join("\n") : "- none"}
@@ -115,9 +132,10 @@ PAST Q&A EXAMPLES:
 ${fewShotBlock}
 
 INSTRUCTIONS:
-- Answer attendance queries precisely using the data above. Quote real names and roll numbers.
+- Answer attendance queries precisely using the data above. Quote real names and enrollment numbers.
+- When referring to a course, prefer the course code (e.g. CS301) plus its name.
 - For "who is absent today?" list the names from ABSENT STUDENTS TODAY.
-- For "show defaulters" or "below 75%", explain that detailed analytics are on the Analytics page; you can mention the threshold ${settings.minAttendancePercent}% and the count of students currently below it if asked.
+- For "show defaulters" or "below 75%", explain that detailed analytics are on the Analytics page; you can mention the university norm of ${settings.minAttendancePercent}% attendance is mandatory.
 - Format lists as clean markdown tables when there are 3+ rows.
 - Be concise but complete. Use **bold** for key numbers.
 - If asked about students not in the roster, say so politely.
@@ -150,7 +168,8 @@ export async function POST(request: Request) {
     const today = getTodayString();
     const todayRecords = getAttendanceByDate(today);
     const students = getAll<Student>(KEYS.STUDENTS);
-    const classes = getAll<ClassRoom>(KEYS.CLASSES);
+    const courses = getAll<Course>(KEYS.COURSES);
+    const faculty = getAll<Faculty>(KEYS.FACULTY);
     const fewShots = getFewShots();
     const activeSessionsCount = getAll<QRSession>(KEYS.QR_SESSIONS).filter(
       (s) => s.isActive
@@ -160,7 +179,8 @@ export async function POST(request: Request) {
       today,
       todayRecords,
       students,
-      classes,
+      courses,
+      faculty,
       settings,
       fewShots,
       activeSessionsCount

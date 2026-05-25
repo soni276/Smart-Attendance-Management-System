@@ -9,9 +9,9 @@ import {
   getStatusColor,
   getTodayString,
 } from "@/lib/utils";
-import type { AttendanceRecord, ClassRoom, Student } from "@/types";
+import type { AttendanceRecord, Course, Student } from "@/types";
 
-type ReportType = "student" | "class" | "subject" | "custom";
+type ReportType = "student" | "course" | "subject" | "custom";
 
 function dateOffset(days: number): string {
   const d = new Date();
@@ -23,46 +23,45 @@ export default function ReportsPage() {
   const [reportType, setReportType] = useState<ReportType>("student");
   const [from, setFrom] = useState(dateOffset(30));
   const [to, setTo] = useState(getTodayString());
-  const [classFilter, setClassFilter] = useState("");
+  const [courseFilter, setCourseFilter] = useState("");
   const [studentFilter, setStudentFilter] = useState("");
   const [subjectFilter, setSubjectFilter] = useState("");
 
-  const { students, classes, records, subjects } = useMemo(() => {
+  const { students, courses, records, subjects } = useMemo(() => {
     const students = getAll<Student>(KEYS.STUDENTS);
-    const classes = getAll<ClassRoom>(KEYS.CLASSES);
+    const courses = getAll<Course>(KEYS.COURSES);
     const all = getAll<AttendanceRecord>(KEYS.ATTENDANCE).filter(
       (r) => r.date >= from && r.date <= to
     );
     const subjectMap = new Map<string, string>();
-    classes.forEach((c) =>
+    courses.forEach((c) =>
       c.schedule.forEach((s) => subjectMap.set(s.subjectId, s.subject))
     );
-    return { students, classes, records: all, subjects: subjectMap };
+    return { students, courses, records: all, subjects: subjectMap };
   }, [from, to]);
 
   const filteredRecords = useMemo(() => {
     let r = records;
-    if (classFilter) r = r.filter((x) => x.classId === classFilter);
+    if (courseFilter) r = r.filter((x) => x.courseId === courseFilter);
     if (studentFilter) r = r.filter((x) => x.studentId === studentFilter);
     if (subjectFilter) r = r.filter((x) => x.subjectId === subjectFilter);
     return r;
-  }, [records, classFilter, studentFilter, subjectFilter]);
+  }, [records, courseFilter, studentFilter, subjectFilter]);
 
   const previewRows = useMemo(() => {
     if (reportType === "student") {
       const list = studentFilter
         ? students.filter((s) => s.id === studentFilter)
-        : classFilter
-          ? students.filter((s) => s.classId === classFilter)
+        : courseFilter
+          ? students.filter((s) => s.courseIds?.includes(courseFilter))
           : students;
 
       return list.map((s) => {
         const pct = calculateAttendancePercent(filteredRecords, s.id);
-        const cls = classes.find((c) => c.id === s.classId);
         return {
           col1: s.name,
-          col2: s.rollNo,
-          col3: cls?.name ?? "—",
+          col2: s.enrollmentNo,
+          col3: `${s.department} · ${s.semester} Sem`,
           col4: `${pct}%`,
           col5: String(
             filteredRecords.filter((r) => r.studentId === s.id).length
@@ -71,28 +70,28 @@ export default function ReportsPage() {
       });
     }
 
-    if (reportType === "class") {
-      const list = classFilter
-        ? classes.filter((c) => c.id === classFilter)
-        : classes;
+    if (reportType === "course") {
+      const list = courseFilter
+        ? courses.filter((c) => c.id === courseFilter)
+        : courses;
       return list.map((c) => {
-        const classRecs = filteredRecords.filter((r) => r.classId === c.id);
-        const attended = classRecs.filter(
+        const courseRecs = filteredRecords.filter((r) => r.courseId === c.id);
+        const attended = courseRecs.filter(
           (r) =>
             r.status === "present" ||
             r.status === "late" ||
             r.status === "half-day"
         ).length;
         const pct =
-          classRecs.length === 0
+          courseRecs.length === 0
             ? 0
-            : Math.round((attended / classRecs.length) * 100);
+            : Math.round((attended / courseRecs.length) * 100);
         return {
-          col1: c.name,
-          col2: c.section,
+          col1: c.courseCode,
+          col2: c.courseName,
           col3: String(c.studentIds.length),
           col4: `${pct}%`,
-          col5: String(classRecs.length),
+          col5: String(courseRecs.length),
         };
       });
     }
@@ -123,11 +122,11 @@ export default function ReportsPage() {
 
     return filteredRecords.slice(0, 100).map((r) => {
       const s = students.find((st) => st.id === r.studentId);
-      const cls = classes.find((c) => c.id === r.classId);
+      const course = courses.find((c) => c.id === r.courseId);
       return {
         col1: formatDate(r.date),
         col2: s?.name ?? r.studentId,
-        col3: cls?.name ?? r.classId,
+        col3: course ? `${course.courseCode}` : r.courseId,
         col4: subjects.get(r.subjectId) ?? r.subjectId,
         col5: r.status,
       };
@@ -135,10 +134,10 @@ export default function ReportsPage() {
   }, [
     reportType,
     students,
-    classes,
+    courses,
     filteredRecords,
     studentFilter,
-    classFilter,
+    courseFilter,
     subjectFilter,
     subjects,
   ]);
@@ -146,13 +145,25 @@ export default function ReportsPage() {
   const headers = useMemo(() => {
     switch (reportType) {
       case "student":
-        return ["Student", "Roll No", "Class", "Attendance %", "Sessions"];
-      case "class":
-        return ["Class", "Section", "Students", "Attendance %", "Records"];
+        return [
+          "Student",
+          "Enrollment No",
+          "Department / Sem",
+          "Attendance %",
+          "Sessions",
+        ];
+      case "course":
+        return [
+          "Course Code",
+          "Course Name",
+          "Students",
+          "Attendance %",
+          "Records",
+        ];
       case "subject":
-        return ["Subject", "Records", "Attendance %", "Days", "—"];
+        return ["Subject / Paper", "Records", "Attendance %", "Days", "—"];
       default:
-        return ["Date", "Student", "Class", "Subject", "Status"];
+        return ["Date", "Student", "Course", "Subject", "Status"];
     }
   }, [reportType]);
 
@@ -181,21 +192,24 @@ export default function ReportsPage() {
           Reports
         </h2>
         <p className="mt-1 text-slate-400">
-          Generate and export attendance reports.
+          Generate and export attendance reports for courses, faculty and
+          students.
         </p>
       </div>
 
       <div className="print:hidden flex flex-wrap gap-4 rounded-2xl border border-white/[0.08] bg-white/[0.03] p-5">
         <div>
-          <label className="mb-1 block text-xs text-slate-500">Report type</label>
+          <label className="mb-1 block text-xs text-slate-500">
+            Report type
+          </label>
           <select
             value={reportType}
             onChange={(e) => setReportType(e.target.value as ReportType)}
             className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white"
           >
             <option value="student">Student Report</option>
-            <option value="class">Class Report</option>
-            <option value="subject">Subject Report</option>
+            <option value="course">Course Report</option>
+            <option value="subject">Subject / Paper Report</option>
             <option value="custom">Custom</option>
           </select>
         </div>
@@ -218,16 +232,16 @@ export default function ReportsPage() {
           />
         </div>
         <div>
-          <label className="mb-1 block text-xs text-slate-500">Class</label>
+          <label className="mb-1 block text-xs text-slate-500">Course</label>
           <select
-            value={classFilter}
-            onChange={(e) => setClassFilter(e.target.value)}
+            value={courseFilter}
+            onChange={(e) => setCourseFilter(e.target.value)}
             className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white"
           >
             <option value="">All</option>
-            {classes.map((c) => (
+            {courses.map((c) => (
               <option key={c.id} value={c.id}>
-                {c.name}
+                {c.courseCode} · {c.courseName}
               </option>
             ))}
           </select>
@@ -243,7 +257,7 @@ export default function ReportsPage() {
               <option value="">All</option>
               {students.map((s) => (
                 <option key={s.id} value={s.id}>
-                  {s.name}
+                  {s.name} ({s.enrollmentNo})
                 </option>
               ))}
             </select>
@@ -251,7 +265,9 @@ export default function ReportsPage() {
         )}
         {(reportType === "subject" || reportType === "custom") && (
           <div>
-            <label className="mb-1 block text-xs text-slate-500">Subject</label>
+            <label className="mb-1 block text-xs text-slate-500">
+              Subject / Paper
+            </label>
             <select
               value={subjectFilter}
               onChange={(e) => setSubjectFilter(e.target.value)}
@@ -321,7 +337,9 @@ export default function ReportsPage() {
           </tbody>
         </table>
         {previewRows.length === 0 && (
-          <p className="py-8 text-center text-slate-500">No data for selection.</p>
+          <p className="py-8 text-center text-slate-500">
+            No data for selection.
+          </p>
         )}
       </div>
     </div>

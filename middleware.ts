@@ -8,8 +8,8 @@ function getDashboardPath(role: SessionUser["role"]): string {
   switch (role) {
     case "admin":
       return "/admin";
-    case "teacher":
-      return "/teacher";
+    case "faculty":
+      return "/faculty";
     case "student":
       return "/student";
     default:
@@ -32,7 +32,7 @@ function parseSession(raw: string | undefined): SessionUser | null {
 
 function getRequiredRole(pathname: string): SessionUser["role"] | null {
   if (pathname.startsWith("/admin")) return "admin";
-  if (pathname.startsWith("/teacher")) return "teacher";
+  if (pathname.startsWith("/faculty")) return "faculty";
   if (pathname.startsWith("/student")) return "student";
   return null;
 }
@@ -42,6 +42,12 @@ export function middleware(request: NextRequest) {
 
   if (pathname.startsWith("/api/")) {
     return NextResponse.next();
+  }
+
+  // Redirect legacy /teacher/* paths to /faculty/*
+  if (pathname === "/teacher" || pathname.startsWith("/teacher/")) {
+    const newPath = pathname.replace(/^\/teacher/, "/faculty");
+    return NextResponse.redirect(new URL(newPath, request.url));
   }
 
   const session = parseSession(request.cookies.get(SESSION_COOKIE)?.value);

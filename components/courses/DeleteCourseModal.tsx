@@ -3,45 +3,45 @@
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { AlertTriangle, X } from "lucide-react";
-import type { ClassRoom } from "@/types";
+import type { Course } from "@/types";
 
-interface DeleteClassModalProps {
-  classroom: ClassRoom | null;
+interface DeleteCourseModalProps {
+  course: Course | null;
   studentCount: number;
   recordCount: number;
   onClose: () => void;
   onConfirm: () => void;
 }
 
-export function DeleteClassModal({
-  classroom,
+export function DeleteCourseModal({
+  course,
   studentCount,
   recordCount,
   onClose,
   onConfirm,
-}: DeleteClassModalProps) {
+}: DeleteCourseModalProps) {
   const [confirmText, setConfirmText] = useState("");
   const [shake, setShake] = useState(false);
 
   useEffect(() => {
-    if (classroom) setConfirmText("");
-  }, [classroom?.id]);
+    if (course) setConfirmText("");
+  }, [course?.id]);
 
   useEffect(() => {
-    if (!classroom) return;
+    if (!course) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [classroom, onClose]);
+  }, [course, onClose]);
 
-  const expected = classroom?.name ?? "";
-  const matches = confirmText.trim() === expected;
+  const expected = course?.courseCode ?? "";
+  const matches = confirmText.trim().toUpperCase() === expected.toUpperCase();
 
   return (
     <AnimatePresence>
-      {classroom && (
+      {course && (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -65,7 +65,7 @@ export function DeleteClassModal({
               <div className="flex items-center gap-2">
                 <AlertTriangle className="h-5 w-5 text-red-400" />
                 <h2 className="font-display text-lg font-semibold text-white">
-                  Delete class
+                  Delete course
                 </h2>
               </div>
               <button type="button" onClick={onClose}>
@@ -76,14 +76,14 @@ export function DeleteClassModal({
               <p className="text-sm text-slate-300">
                 You are about to permanently delete{" "}
                 <span className="font-semibold text-white">
-                  {classroom.name}
+                  {course.courseCode} · {course.courseName}
                 </span>
                 .
               </p>
               <ul className="space-y-1 rounded-lg border border-red-500/20 bg-red-500/5 p-3 text-xs text-rose-200">
                 <li>
                   {studentCount} student{studentCount === 1 ? "" : "s"} will be
-                  unassigned from this class
+                  unenrolled from this course
                 </li>
                 <li>
                   {recordCount} attendance record
@@ -92,7 +92,8 @@ export function DeleteClassModal({
                 <li>This action cannot be undone</li>
               </ul>
               <p className="text-xs text-slate-400">
-                Type <span className="font-mono font-bold text-red-300">
+                Type the course code{" "}
+                <span className="font-mono font-bold text-red-300">
                   {expected}
                 </span>{" "}
                 to confirm:
@@ -101,7 +102,7 @@ export function DeleteClassModal({
                 value={confirmText}
                 onChange={(e) => setConfirmText(e.target.value)}
                 placeholder={expected}
-                className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-red-500/50"
+                className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 font-mono text-sm text-white outline-none focus:border-red-500/50"
                 autoFocus
               />
             </div>
@@ -126,7 +127,7 @@ export function DeleteClassModal({
                 disabled={!matches}
                 className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition disabled:opacity-40 hover:bg-red-500"
               >
-                Delete class
+                Delete course
               </button>
             </div>
           </motion.div>

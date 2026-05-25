@@ -23,20 +23,20 @@ import { cn } from "@/lib/utils";
 type Role = SessionUser["role"];
 
 const ROLES: { id: Role; label: string; icon: typeof Shield }[] = [
-  { id: "admin", label: "Admin", icon: Shield },
-  { id: "teacher", label: "Teacher", icon: GraduationCap },
+  { id: "admin", label: "Administrator", icon: Shield },
+  { id: "faculty", label: "Faculty", icon: GraduationCap },
   { id: "student", label: "Student", icon: User },
 ];
 
 const DEMO_CREDS: Record<Role, { email: string; password: string }> = {
-  admin: { email: "admin@sas.com", password: "admin123" },
-  teacher: { email: "sharma@sas.com", password: "teacher123" },
-  student: { email: "10a001@sas.student.com", password: "10A001" },
+  admin: { email: "admin@git.edu.in", password: "admin123" },
+  faculty: { email: "rajesh.sharma@git.edu.in", password: "faculty123" },
+  student: { email: "cse22001@git.edu.in", password: "CSE22001" },
 };
 
 const DASHBOARD_PATH: Record<Role, string> = {
   admin: "/admin",
-  teacher: "/teacher",
+  faculty: "/faculty",
   student: "/student",
 };
 
@@ -88,7 +88,7 @@ export default function LoginPage() {
     const session = login(email, password, role);
 
     if (session) {
-      toast.success(`Welcome back, ${session.name}!`);
+      toast.success(`Welcome back, ${session.name.split(" ")[0]}!`);
       router.push(DASHBOARD_PATH[role]);
     } else {
       toast.error("Invalid email or password. Please try again.");
@@ -125,13 +125,13 @@ export default function LoginPage() {
             transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
             className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 via-purple-500 to-cyan-400 shadow-lg shadow-indigo-500/30"
           >
-            <Shield className="h-8 w-8 text-white" />
+            <GraduationCap className="h-8 w-8 text-white" />
           </motion.div>
           <h1 className="font-display text-3xl font-bold tracking-tight text-white">
-            SAS
+            Campus Attendance System
           </h1>
           <p className="mt-1 text-sm text-slate-400">
-            Smart Attendance System
+            AI-Powered Attendance for Modern Universities
           </p>
         </div>
 
@@ -151,8 +151,10 @@ export default function LoginPage() {
               type="button"
               onClick={() => handleRoleChange(r.id)}
               className={cn(
-                "relative z-10 flex flex-1 flex-col items-center gap-1 py-2.5 text-sm font-medium transition-colors",
-                role === r.id ? "text-white" : "text-slate-400 hover:text-slate-200"
+                "relative z-10 flex flex-1 flex-col items-center gap-1 py-2.5 text-xs font-medium transition-colors sm:text-sm",
+                role === r.id
+                  ? "text-white"
+                  : "text-slate-400 hover:text-slate-200"
               )}
             >
               <span className="flex items-center gap-1.5">
@@ -227,13 +229,15 @@ export default function LoginPage() {
                       : "top-4 text-sm text-slate-500"
                   )}
                 >
-                  Password
+                  {role === "student" ? "Password (Enrollment No)" : "Password"}
                 </label>
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
                   className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
-                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  aria-label={
+                    showPassword ? "Hide password" : "Show password"
+                  }
                 >
                   {showPassword ? (
                     <EyeOff className="h-4 w-4" />
@@ -253,13 +257,21 @@ export default function LoginPage() {
           >
             <div className="flex items-start justify-between gap-2">
               <div className="text-xs text-slate-300">
-                <p className="mb-1 font-medium text-indigo-300">Demo credentials</p>
+                <p className="mb-1 font-medium text-indigo-300">
+                  Demo {ROLES.find((r) => r.id === role)?.label} credentials
+                </p>
                 <p>
                   <span className="text-slate-500">Email:</span> {creds.email}
                 </p>
                 <p>
-                  <span className="text-slate-500">Password:</span> {creds.password}
+                  <span className="text-slate-500">Password:</span>{" "}
+                  {creds.password}
                 </p>
+                {role === "student" && (
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    Tip: student password = enrollment number (case-sensitive)
+                  </p>
+                )}
               </div>
               <button
                 type="button"
@@ -295,7 +307,7 @@ export default function LoginPage() {
         </form>
 
         <p className="mt-8 text-center text-xs text-slate-500">
-          Powered by AI • Face Recognition • Dynamic QR
+          Powered by AI · Face Recognition · Dynamic QR
         </p>
       </motion.div>
     </div>

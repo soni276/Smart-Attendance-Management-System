@@ -11,8 +11,8 @@ function dashboardHref(): string {
   switch (user.role) {
     case "admin":
       return "/admin";
-    case "teacher":
-      return "/teacher";
+    case "faculty":
+      return "/faculty";
     case "student":
       return "/student";
     default:

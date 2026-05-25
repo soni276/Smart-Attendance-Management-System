@@ -6,11 +6,11 @@ import {
   getInitials,
 } from "@/lib/student-helpers";
 import { cn } from "@/lib/utils";
-import type { ClassRoom, Student } from "@/types";
+import type { Student } from "@/types";
 
 export interface StudentWithMeta extends Student {
   attendancePercent: number;
-  className: string;
+  primaryCourseLabel: string;
 }
 
 interface StudentCardProps {
@@ -98,10 +98,20 @@ export function StudentCard({
           </div>
         )}
         <p className="mt-2 font-medium text-white">{student.name}</p>
-        <p className="text-xs text-slate-500">{student.rollNo}</p>
-        <span className="mt-1 rounded-full bg-indigo-500/15 px-2 py-0.5 text-xs text-indigo-300">
-          {student.className}
-        </span>
+        <p className="font-mono text-xs text-slate-500">
+          {student.enrollmentNo}
+        </p>
+        <div className="mt-1 flex flex-wrap justify-center gap-1">
+          <span className="rounded-full bg-indigo-500/15 px-2 py-0.5 text-[10px] text-indigo-300">
+            {student.department}
+          </span>
+          <span className="rounded-full bg-fuchsia-500/15 px-2 py-0.5 text-[10px] text-fuchsia-300">
+            Batch {student.batch}
+          </span>
+          <span className="rounded-full bg-cyan-500/15 px-2 py-0.5 text-[10px] text-cyan-300">
+            {student.semester} Sem
+          </span>
+        </div>
         <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
           <div
             className={cn(

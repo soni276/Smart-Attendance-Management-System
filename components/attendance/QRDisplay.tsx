@@ -11,7 +11,7 @@ interface QRDisplayProps {
   sessionId: string;
   signature?: string;
   className?: string;
-  classLabel?: string;
+  courseLabel?: string;
   subjectLabel?: string;
   dateLabel?: string;
   timeLabel?: string;
@@ -24,7 +24,7 @@ export function QRDisplay({
   sessionId,
   signature,
   className,
-  classLabel,
+  courseLabel,
   subjectLabel,
   dateLabel,
   timeLabel,
@@ -135,11 +135,11 @@ export function QRDisplay({
         </p>
       </div>
 
-      {(classLabel || subjectLabel || dateLabel || timeLabel) && (
+      {(courseLabel || subjectLabel || dateLabel || timeLabel) && (
         <div className="mt-5 flex flex-wrap justify-center gap-2">
-          {classLabel && (
+          {courseLabel && (
             <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-300">
-              {classLabel}
+              {courseLabel}
             </span>
           )}
           {subjectLabel && (

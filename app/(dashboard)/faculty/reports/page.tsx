@@ -30,9 +30,9 @@ import {
 } from "@/lib/utils";
 import type {
   AttendanceRecord,
-  ClassRoom,
+  Course,
+  Faculty,
   Student,
-  Teacher,
 } from "@/types";
 
 function dateOffset(days: number): string {
@@ -58,7 +58,7 @@ function downloadCsv(filename: string, header: string[], rows: string[][]) {
 
 interface StudentRow {
   student: Student;
-  className: string;
+  courseLabel: string;
   present: number;
   late: number;
   absent: number;
@@ -66,9 +66,9 @@ interface StudentRow {
   percent: number;
 }
 
-export default function TeacherReportsPage() {
+export default function FacultyReportsPage() {
   const [loading, setLoading] = useState(true);
-  const [classFilter, setClassFilter] = useState<string>("all");
+  const [courseFilter, setCourseFilter] = useState<string>("all");
   const [from, setFrom] = useState(dateOffset(30));
   const [to, setTo] = useState(getTodayString());
   const [search, setSearch] = useState("");
@@ -76,21 +76,23 @@ export default function TeacherReportsPage() {
   const data = useMemo(() => {
     if (typeof window === "undefined") return null;
     const user = getCurrentUser();
-    if (!user || user.role !== "teacher") return null;
+    if (!user || user.role !== "faculty") return null;
 
-    const teachers = getAll<Teacher>(KEYS.TEACHERS);
-    const teacher =
-      teachers.find((t) => t.id === user.userId) ??
-      teachers.find((t) => t.email === user.email);
-    if (!teacher) return null;
+    const allFaculty = getAll<Faculty>(KEYS.FACULTY);
+    const faculty =
+      allFaculty.find((f) => f.id === user.userId) ??
+      allFaculty.find((f) => f.email === user.email);
+    if (!faculty) return null;
 
-    const classes = getAll<ClassRoom>(KEYS.CLASSES);
-    const myClasses = classes.filter((c) => teacher.classIds.includes(c.id));
+    const courses = getAll<Course>(KEYS.COURSES);
+    const myCourses = courses.filter(
+      (c) => faculty.courseIds.includes(c.id) || c.facultyId === faculty.id
+    );
     const allStudents = getAll<Student>(KEYS.STUDENTS);
     const allRecords = getAll<AttendanceRecord>(KEYS.ATTENDANCE);
     const settings = getSettings();
 
-    return { teacher, myClasses, allStudents, allRecords, settings };
+    return { faculty, myCourses, allStudents, allRecords, settings };
   }, []);
 
   useEffect(() => {
@@ -99,37 +101,50 @@ export default function TeacherReportsPage() {
 
   const filtered = useMemo(() => {
     if (!data) return null;
-    const myClassIds = new Set(data.myClasses.map((c) => c.id));
+    const myCourseIds = new Set(data.myCourses.map((c) => c.id));
     const inRange = data.allRecords.filter(
       (r) =>
-        myClassIds.has(r.classId) &&
+        myCourseIds.has(r.courseId) &&
         r.date >= from &&
         r.date <= to &&
-        (classFilter === "all" || r.classId === classFilter)
+        (courseFilter === "all" || r.courseId === courseFilter)
     );
     return inRange;
-  }, [data, from, to, classFilter]);
+  }, [data, from, to, courseFilter]);
 
   const studentRows: StudentRow[] = useMemo(() => {
     if (!data || !filtered) return [];
-    const myClassIds =
-      classFilter === "all"
-        ? new Set(data.myClasses.map((c) => c.id))
-        : new Set([classFilter]);
+    const myCourseIds =
+      courseFilter === "all"
+        ? new Set(data.myCourses.map((c) => c.id))
+        : new Set([courseFilter]);
 
     const rows: StudentRow[] = [];
-    const classMap = new Map(data.myClasses.map((c) => [c.id, c]));
+    const courseMap = new Map(data.myCourses.map((c) => [c.id, c]));
+
+    const studentIdsInCourses = new Set<string>();
+    data.myCourses
+      .filter((c) => myCourseIds.has(c.id))
+      .forEach((c) =>
+        c.studentIds.forEach((id) => studentIdsInCourses.add(id))
+      );
 
     data.allStudents
-      .filter((s) => myClassIds.has(s.classId))
+      .filter((s) => studentIdsInCourses.has(s.id))
       .forEach((s) => {
         const studentRecs = filtered.filter((r) => r.studentId === s.id);
         const present = studentRecs.filter((r) => r.status === "present").length;
         const late = studentRecs.filter((r) => r.status === "late").length;
         const absent = studentRecs.filter((r) => r.status === "absent").length;
+        const primaryCourseId = s.courseIds.find((id) => myCourseIds.has(id));
+        const primaryCourse = primaryCourseId
+          ? courseMap.get(primaryCourseId)
+          : null;
         rows.push({
           student: s,
-          className: classMap.get(s.classId)?.name ?? "—",
+          courseLabel: primaryCourse
+            ? `${primaryCourse.courseCode} · ${primaryCourse.courseName}`
+            : "—",
           present,
           late,
           absent,
@@ -139,7 +154,7 @@ export default function TeacherReportsPage() {
       });
 
     return rows.sort((a, b) => b.percent - a.percent);
-  }, [data, filtered, classFilter]);
+  }, [data, filtered, courseFilter]);
 
   const visibleRows = useMemo(() => {
     if (!search.trim()) return studentRows;
@@ -147,7 +162,7 @@ export default function TeacherReportsPage() {
     return studentRows.filter(
       (r) =>
         r.student.name.toLowerCase().includes(q) ||
-        r.student.rollNo.toLowerCase().includes(q)
+        r.student.enrollmentNo.toLowerCase().includes(q)
     );
   }, [studentRows, search]);
 
@@ -200,18 +215,18 @@ export default function TeacherReportsPage() {
     return (
       <EmptyState
         icon={UserX}
-        title="Sign in as teacher"
-        description="Please log in with a teacher account to view reports."
+        title="Sign in as faculty"
+        description="Please log in with a faculty account to view reports."
       />
     );
   }
 
-  if (data.myClasses.length === 0) {
+  if (data.myCourses.length === 0) {
     return (
       <EmptyState
         icon={FileText}
-        title="No classes assigned"
-        description="You need at least one assigned class to generate reports."
+        title="No courses assigned"
+        description="You need at least one assigned course to generate reports."
       />
     );
   }
@@ -225,12 +240,21 @@ export default function TeacherReportsPage() {
       return;
     }
     downloadCsv(
-      `teacher-report-${classFilter}-${getTodayString()}.csv`,
-      ["Name", "Roll No", "Class", "Present", "Late", "Absent", "Total", "Percent"],
+      `faculty-report-${courseFilter}-${getTodayString()}.csv`,
+      [
+        "Name",
+        "Enrollment No",
+        "Course",
+        "Present",
+        "Late",
+        "Absent",
+        "Total",
+        "Percent",
+      ],
       visibleRows.map((r) => [
         r.student.name,
-        r.student.rollNo,
-        r.className,
+        r.student.enrollmentNo,
+        r.courseLabel,
         String(r.present),
         String(r.late),
         String(r.absent),
@@ -243,16 +267,16 @@ export default function TeacherReportsPage() {
 
   const handleExportDefaulters = () => {
     if (defaulters.length === 0) {
-      toast("No defaulters to export", { icon: "🎉" });
+      toast("No defaulters to export");
       return;
     }
     downloadCsv(
-      `defaulters-${classFilter}-${getTodayString()}.csv`,
-      ["Name", "Roll No", "Class", "Percent", "Sessions"],
+      `defaulters-${courseFilter}-${getTodayString()}.csv`,
+      ["Name", "Enrollment No", "Course", "Percent", "Sessions"],
       defaulters.map((r) => [
         r.student.name,
-        r.student.rollNo,
-        r.className,
+        r.student.enrollmentNo,
+        r.courseLabel,
         `${r.percent}%`,
         String(r.total),
       ])
@@ -273,23 +297,23 @@ export default function TeacherReportsPage() {
             My Reports
           </h2>
           <p className="text-sm text-slate-400">
-            Reports are limited to your assigned classes.
+            Reports are limited to your assigned courses.
           </p>
         </div>
       </div>
 
       <div className="flex flex-wrap items-end gap-3 rounded-2xl border border-white/[0.08] bg-white/[0.03] p-4 print:hidden">
         <div>
-          <label className="mb-1 block text-xs text-slate-500">Class</label>
+          <label className="mb-1 block text-xs text-slate-500">Course</label>
           <select
-            value={classFilter}
-            onChange={(e) => setClassFilter(e.target.value)}
+            value={courseFilter}
+            onChange={(e) => setCourseFilter(e.target.value)}
             className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white"
           >
-            <option value="all">All my classes</option>
-            {data.myClasses.map((c) => (
+            <option value="all">All my courses</option>
+            {data.myCourses.map((c) => (
               <option key={c.id} value={c.id}>
-                {c.name}
+                {c.courseCode} · {c.courseName}
               </option>
             ))}
           </select>
@@ -318,7 +342,7 @@ export default function TeacherReportsPage() {
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Name or roll no"
+            placeholder="Name or enrollment no"
             className="rounded-lg border border-white/10 bg-white/5 py-2 pl-9 pr-3 text-sm text-white placeholder:text-slate-500"
           />
         </div>
@@ -344,11 +368,7 @@ export default function TeacherReportsPage() {
 
       <div className="grid gap-4 sm:grid-cols-4">
         {[
-          {
-            label: "Records",
-            value: summary.total,
-            color: "text-white",
-          },
+          { label: "Records", value: summary.total, color: "text-white" },
           {
             label: "Present %",
             value: `${summary.presentPct}%`,
@@ -394,7 +414,7 @@ export default function TeacherReportsPage() {
           <ResponsiveContainer width="100%" height={260}>
             <AreaChart data={trend}>
               <defs>
-                <linearGradient id="teacherTrend" x1="0" y1="0" x2="0" y2="1">
+                <linearGradient id="facultyTrend" x1="0" y1="0" x2="0" y2="1">
                   <stop
                     offset="0%"
                     stopColor={CHART_THEME.present}
@@ -422,7 +442,7 @@ export default function TeacherReportsPage() {
                 dataKey="percent"
                 name="Attendance %"
                 stroke={CHART_THEME.present}
-                fill="url(#teacherTrend)"
+                fill="url(#facultyTrend)"
                 {...CHART_ANIMATION}
               />
             </AreaChart>
@@ -447,8 +467,8 @@ export default function TeacherReportsPage() {
               <thead>
                 <tr className="border-b border-white/10 text-xs uppercase tracking-wide text-slate-500">
                   <th className="py-2 pr-4">Student</th>
-                  <th className="py-2 pr-4">Roll</th>
-                  <th className="py-2 pr-4">Class</th>
+                  <th className="py-2 pr-4">Enrollment No</th>
+                  <th className="py-2 pr-4">Course</th>
                   <th className="py-2 pr-4 text-right">Present</th>
                   <th className="py-2 pr-4 text-right">Late</th>
                   <th className="py-2 pr-4 text-right">Absent</th>
@@ -466,10 +486,12 @@ export default function TeacherReportsPage() {
                     className="border-b border-white/5 text-slate-300"
                   >
                     <td className="py-2 pr-4 text-white">{r.student.name}</td>
-                    <td className="py-2 pr-4 text-slate-400">
-                      {r.student.rollNo}
+                    <td className="py-2 pr-4 font-mono text-slate-400">
+                      {r.student.enrollmentNo}
                     </td>
-                    <td className="py-2 pr-4 text-slate-400">{r.className}</td>
+                    <td className="py-2 pr-4 text-slate-400">
+                      {r.courseLabel}
+                    </td>
                     <td className="py-2 pr-4 text-right text-green-300">
                       {r.present}
                     </td>
@@ -505,7 +527,7 @@ export default function TeacherReportsPage() {
           <h3 className="font-display text-lg font-semibold text-white">
             Defaulters{" "}
             <span className="text-sm font-normal text-amber-300">
-              (below {minPercent}%)
+              (below {minPercent}% — university norm)
             </span>
           </h3>
           <button
@@ -531,7 +553,8 @@ export default function TeacherReportsPage() {
                 <div className="min-w-0">
                   <p className="truncate text-white">{r.student.name}</p>
                   <p className="text-xs text-slate-500">
-                    {r.student.rollNo} · {r.className}
+                    <span className="font-mono">{r.student.enrollmentNo}</span>{" "}
+                    · {r.courseLabel}
                   </p>
                 </div>
                 <span className="rounded-full bg-red-500/15 px-3 py-1 text-xs font-semibold text-red-300">
@@ -544,8 +567,8 @@ export default function TeacherReportsPage() {
       </div>
 
       <p className="hidden text-xs text-slate-500 print:block">
-        Report generated on {formatDate(new Date())} ·{" "}
-        {data.teacher.name} · {data.settings.schoolName}
+        Report generated on {formatDate(new Date())} · {data.faculty.name} ·{" "}
+        {data.settings.institutionName}
       </p>
     </motion.div>
   );

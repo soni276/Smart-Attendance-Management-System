@@ -36,7 +36,7 @@ import { buildClientStoreSnapshot } from "@/lib/client-store";
 import {
   getAnomalyData,
   getAttendanceSummary,
-  getClasswiseSummary,
+  getCoursewiseSummary,
   getDefaulters,
   getSubjectwiseSummary,
   getWeeklyTrend,
@@ -44,7 +44,7 @@ import {
 } from "@/lib/analytics";
 import { KEYS, getAll, getSettings } from "@/lib/storage";
 import { cn, getTodayString } from "@/lib/utils";
-import type { AttendanceRecord, ClassRoom, Student } from "@/types";
+import type { AttendanceRecord, Course, Student } from "@/types";
 
 type DatePreset = "7" | "30" | "90" | "custom";
 
@@ -66,7 +66,7 @@ function filterRecords(
   preset: DatePreset,
   customFrom: string,
   customTo: string,
-  classId: string,
+  courseId: string,
   subjectId: string
 ): AttendanceRecord[] {
   let filtered = records;
@@ -81,7 +81,7 @@ function filterRecords(
     filtered = filtered.filter((r) => r.date >= from && r.date <= today);
   }
 
-  if (classId) filtered = filtered.filter((r) => r.classId === classId);
+  if (courseId) filtered = filtered.filter((r) => r.courseId === courseId);
   if (subjectId) filtered = filtered.filter((r) => r.subjectId === subjectId);
   return filtered;
 }
@@ -124,13 +124,13 @@ function severityBadgeClass(severity: string): string {
 }
 
 function exportDefaultersCsv(
-  defaulters: ReturnType<typeof getDefaulters>,
-  classes: ClassRoom[]
+  defaulters: ReturnType<typeof getDefaulters>
 ) {
-  const header = "Rank,Name,Roll No,Class,Current %,Classes Needed,Streak\n";
+  const header =
+    "Rank,Name,Enrollment No,Department,Semester,Batch,Current %,Sessions Needed,Streak\n";
   const rows = defaulters.map((d, i) => {
-    const cls = classes.find((c) => c.id === d.student.classId)?.name ?? "";
-    return `${i + 1},"${d.student.name}",${d.student.rollNo},"${cls}",${d.currentPercent},${d.classesNeeded},${d.streak}`;
+    const s = d.student;
+    return `${i + 1},"${s.name}",${s.enrollmentNo},"${s.department}",${s.semester},${s.batch},${d.currentPercent},${d.sessionsNeeded},${d.streak}`;
   });
   const blob = new Blob([header + rows.join("\n")], { type: "text/csv" });
   const url = URL.createObjectURL(blob);
@@ -145,7 +145,7 @@ export default function AnalyticsPage() {
   const [preset, setPreset] = useState<DatePreset>("7");
   const [customFrom, setCustomFrom] = useState(dateOffset(30));
   const [customTo, setCustomTo] = useState(getTodayString());
-  const [classFilter, setClassFilter] = useState("");
+  const [courseFilter, setCourseFilter] = useState("");
   const [subjectFilter, setSubjectFilter] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
   const [insightsLoading, setInsightsLoading] = useState(false);
@@ -180,10 +180,10 @@ export default function AnalyticsPage() {
 
   const reload = useCallback(() => setRefreshKey((k) => k + 1), []);
 
-  const { students, classes, settings, filtered, subjects } = useMemo(() => {
+  const { students, courses, settings, filtered, subjects } = useMemo(() => {
     void refreshKey;
     const students = getAll<Student>(KEYS.STUDENTS);
-    const classes = getAll<ClassRoom>(KEYS.CLASSES);
+    const courses = getAll<Course>(KEYS.COURSES);
     const settings = getSettings();
     const all = getAll<AttendanceRecord>(KEYS.ATTENDANCE);
     const filtered = filterRecords(
@@ -191,20 +191,20 @@ export default function AnalyticsPage() {
       preset,
       customFrom,
       customTo,
-      classFilter,
+      courseFilter,
       subjectFilter
     );
     const subjectSet = new Map<string, string>();
-    classes.forEach((c) =>
+    courses.forEach((c) =>
       c.schedule.forEach((s) => subjectSet.set(s.subjectId, s.subject))
     );
-    return { students, classes, settings, filtered, subjects: subjectSet };
+    return { students, courses, settings, filtered, subjects: subjectSet };
   }, [
     refreshKey,
     preset,
     customFrom,
     customTo,
-    classFilter,
+    courseFilter,
     subjectFilter,
   ]);
 
@@ -220,13 +220,13 @@ export default function AnalyticsPage() {
       ),
     [filtered, preset]
   );
-  const classSummaries = useMemo(
-    () => getClasswiseSummary(filtered, classes, students),
-    [filtered, classes, students]
+  const courseSummaries = useMemo(
+    () => getCoursewiseSummary(filtered, courses, students),
+    [filtered, courses, students]
   );
   const subjectSummaries = useMemo(
-    () => getSubjectwiseSummary(filtered, classes),
-    [filtered, classes]
+    () => getSubjectwiseSummary(filtered, courses),
+    [filtered, courses]
   );
   const defaulters = useMemo(() => {
     const list = getDefaulters(
@@ -237,7 +237,7 @@ export default function AnalyticsPage() {
     const sorted = [...list];
     if (sortKey === "percent") sorted.sort((a, b) => a.currentPercent - b.currentPercent);
     else if (sortKey === "streak") sorted.sort((a, b) => b.streak - a.streak);
-    else if (sortKey === "needed") sorted.sort((a, b) => b.classesNeeded - a.classesNeeded);
+    else if (sortKey === "needed") sorted.sort((a, b) => b.sessionsNeeded - a.sessionsNeeded);
     return sorted;
   }, [filtered, students, settings.minAttendancePercent, sortKey]);
 
@@ -280,7 +280,7 @@ export default function AnalyticsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           dateRange,
-          classId: classFilter || undefined,
+          courseId: courseFilter || undefined,
           _store: buildClientStoreSnapshot(),
         }),
       });
@@ -333,22 +333,24 @@ export default function AnalyticsPage() {
           </>
         )}
         <div>
-          <label className="mb-1 block text-xs text-slate-500">Class</label>
+          <label className="mb-1 block text-xs text-slate-500">Course</label>
           <select
-            value={classFilter}
-            onChange={(e) => setClassFilter(e.target.value)}
+            value={courseFilter}
+            onChange={(e) => setCourseFilter(e.target.value)}
             className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white"
           >
-            <option value="">All classes</option>
-            {classes.map((c) => (
+            <option value="">All courses</option>
+            {courses.map((c) => (
               <option key={c.id} value={c.id}>
-                {c.name}
+                {c.courseCode} · {c.courseName}
               </option>
             ))}
           </select>
         </div>
         <div>
-          <label className="mb-1 block text-xs text-slate-500">Subject</label>
+          <label className="mb-1 block text-xs text-slate-500">
+            Subject / Paper
+          </label>
           <select
             value={subjectFilter}
             onChange={(e) => setSubjectFilter(e.target.value)}
@@ -469,11 +471,11 @@ export default function AnalyticsPage() {
           </ResponsiveContainer>
         </AttendanceChart>
 
-        <AttendanceChart title="Class-wise Comparison" height={260}>
+        <AttendanceChart title="Course-wise Comparison" height={260}>
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={classSummaries}>
+            <BarChart data={courseSummaries}>
               <CartesianGrid strokeDasharray="3 3" stroke={CHART_THEME.grid} />
-              <XAxis dataKey="className" tick={{ fill: CHART_THEME.tick, fontSize: 10 }} />
+              <XAxis dataKey="courseCode" tick={{ fill: CHART_THEME.tick, fontSize: 10 }} />
               <YAxis tick={{ fill: CHART_THEME.tick, fontSize: 11 }} domain={[0, 100]} />
               <RechartsTooltip content={<GlassTooltip />} />
               <Legend />
@@ -482,7 +484,7 @@ export default function AnalyticsPage() {
           </ResponsiveContainer>
         </AttendanceChart>
 
-        <AttendanceChart title="Subject-wise Performance" height={260}>
+        <AttendanceChart title="Subject / Paper Performance" height={260}>
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={subjectSummaries} layout="vertical">
               <CartesianGrid strokeDasharray="3 3" stroke={CHART_THEME.grid} />
@@ -526,7 +528,7 @@ export default function AnalyticsPage() {
           </h3>
           <button
             type="button"
-            onClick={() => exportDefaultersCsv(defaulters, classes)}
+            onClick={() => exportDefaultersCsv(defaulters)}
             className="flex items-center gap-2 rounded-lg border border-white/10 px-3 py-1.5 text-sm text-slate-300 hover:bg-white/5"
           >
             <Download className="h-4 w-4" />
@@ -539,7 +541,7 @@ export default function AnalyticsPage() {
               <tr className="border-b border-white/10 text-slate-500">
                 <th className="py-2 pr-4">Rank</th>
                 <th className="py-2 pr-4">Student</th>
-                <th className="py-2 pr-4">Class</th>
+                <th className="py-2 pr-4">Department / Sem</th>
                 <th
                   className="cursor-pointer py-2 pr-4"
                   onClick={() => setSortKey("percent")}
@@ -550,7 +552,7 @@ export default function AnalyticsPage() {
                   className="cursor-pointer py-2 pr-4"
                   onClick={() => setSortKey("needed")}
                 >
-                  Classes Needed
+                  Sessions Needed
                 </th>
                 <th
                   className="cursor-pointer py-2 pr-4"
@@ -563,7 +565,6 @@ export default function AnalyticsPage() {
             </thead>
             <tbody>
               {defaulters.map((d, i) => {
-                const cls = classes.find((c) => c.id === d.student.classId);
                 const rowClass =
                   d.currentPercent < 60
                     ? "text-red-300"
@@ -575,18 +576,22 @@ export default function AnalyticsPage() {
                     <td className={cn("py-3 pr-4", rowClass)}>{i + 1}</td>
                     <td className={cn("py-3 pr-4", rowClass)}>
                       {d.student.name}
-                      <span className="ml-1 text-xs text-slate-500">
-                        {d.student.rollNo}
+                      <span className="ml-1 font-mono text-xs text-slate-500">
+                        {d.student.enrollmentNo}
                       </span>
                     </td>
-                    <td className={cn("py-3 pr-4", rowClass)}>
-                      {cls?.name ?? "—"}
+                    <td className={cn("py-3 pr-4 text-xs", rowClass)}>
+                      {d.student.department}
+                      <br />
+                      <span className="text-slate-500">
+                        {d.student.semester} Sem · {d.student.batch}
+                      </span>
                     </td>
                     <td className={cn("py-3 pr-4 font-medium", rowClass)}>
                       {d.currentPercent}%
                     </td>
                     <td className={cn("py-3 pr-4", rowClass)}>
-                      {d.classesNeeded}
+                      {d.sessionsNeeded}
                     </td>
                     <td className={cn("py-3 pr-4", rowClass)}>{d.streak}</td>
                     <td className="py-3">

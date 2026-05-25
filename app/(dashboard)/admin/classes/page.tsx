@@ -2,22 +2,26 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus } from "lucide-react";
+import { Plus, Search } from "lucide-react";
 import toast from "react-hot-toast";
-import { ClassCard, type ClassCardData } from "@/components/classes/ClassCard";
 import {
-  ClassModal,
-  type ClassFormData,
-} from "@/components/classes/ClassModal";
-import { DeleteClassModal } from "@/components/classes/DeleteClassModal";
+  CourseCard,
+  type CourseCardData,
+} from "@/components/courses/CourseCard";
+import {
+  CourseModal,
+  type CourseFormData,
+} from "@/components/courses/CourseModal";
+import { DeleteCourseModal } from "@/components/courses/DeleteCourseModal";
 import { KEYS, getAll, remove, save, saveMany } from "@/lib/storage";
 import { generateId, getTodayString } from "@/lib/utils";
 import type {
   AttendanceRecord,
-  ClassRoom,
+  Course,
+  Faculty,
   ScheduleSlot,
+  Semester,
   Student,
-  Teacher,
 } from "@/types";
 
 function dayNameFromDate(d: Date): ScheduleSlot["day"] | null {
@@ -34,7 +38,7 @@ function dayNameFromDate(d: Date): ScheduleSlot["day"] | null {
   return names[idx - 1];
 }
 
-function getNextClass(schedule: ScheduleSlot[]): string | null {
+function getNextLecture(schedule: ScheduleSlot[]): string | null {
   const today = dayNameFromDate(new Date());
   if (!today) return null;
   const now = new Date();
@@ -54,123 +58,159 @@ function getNextClass(schedule: ScheduleSlot[]): string | null {
   return tomorrow ? `Next: ${tomorrow.subject}` : null;
 }
 
-export default function AdminClassesPage() {
+export default function AdminCoursesPage() {
   const router = useRouter();
   const [refreshKey, setRefreshKey] = useState(0);
   const [modalOpen, setModalOpen] = useState(false);
-  const [editClass, setEditClass] = useState<ClassRoom | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<ClassRoom | null>(null);
+  const [editCourse, setEditCourse] = useState<Course | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Course | null>(null);
+  const [search, setSearch] = useState("");
+  const [filterDept, setFilterDept] = useState("");
+  const [filterSemester, setFilterSemester] = useState<Semester | "">("");
+  const [filterBatch, setFilterBatch] = useState("");
 
-  const { classes, teachers, students, records, today } = useMemo(() => {
+  const { courses, faculty, students, records, today } = useMemo(() => {
     return {
-      classes: getAll<ClassRoom>(KEYS.CLASSES),
-      teachers: getAll<Teacher>(KEYS.TEACHERS),
+      courses: getAll<Course>(KEYS.COURSES),
+      faculty: getAll<Faculty>(KEYS.FACULTY),
       students: getAll<Student>(KEYS.STUDENTS),
       records: getAll<AttendanceRecord>(KEYS.ATTENDANCE),
       today: getTodayString(),
     };
   }, [refreshKey]);
 
-  const cardData: ClassCardData[] = useMemo(() => {
-    return classes.map((classroom) => {
-      const teacher = teachers.find((t) => t.id === classroom.teacherId) ?? null;
-      const studentCount = classroom.studentIds.length;
+  const departments = useMemo(
+    () => Array.from(new Set(courses.map((c) => c.department))).sort(),
+    [courses]
+  );
+  const batches = useMemo(
+    () => Array.from(new Set(courses.map((c) => c.batch))).sort(),
+    [courses]
+  );
+
+  const filteredCourses = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return courses.filter((c) => {
+      if (filterDept && c.department !== filterDept) return false;
+      if (filterSemester && c.semester !== filterSemester) return false;
+      if (filterBatch && c.batch !== filterBatch) return false;
+      if (q) {
+        const hay =
+          `${c.courseCode} ${c.courseName} ${c.department}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [courses, search, filterDept, filterSemester, filterBatch]);
+
+  const cardData: CourseCardData[] = useMemo(() => {
+    return filteredCourses.map((course) => {
+      const fac =
+        faculty.find((f) => f.id === course.facultyId) ?? null;
+      const studentCount = course.studentIds.length;
       const todayRecs = records.filter(
-        (r) => r.classId === classroom.id && r.date === today
+        (r) => r.courseId === course.id && r.date === today
       );
       const present = todayRecs.filter(
         (r) =>
-          r.status === "present" || r.status === "late" || r.status === "half-day"
+          r.status === "present" ||
+          r.status === "late" ||
+          r.status === "half-day"
       ).length;
       const todayPercent =
         studentCount === 0
           ? 0
-          : Math.round((present / Math.max(todayRecs.length, studentCount)) * 100);
+          : Math.round(
+              (present / Math.max(todayRecs.length, studentCount)) * 100
+            );
 
       return {
-        classroom,
-        teacher,
+        course,
+        faculty: fac,
         studentCount,
         todayPercent: Math.min(100, todayPercent),
-        nextClass: getNextClass(classroom.schedule),
+        nextLecture: getNextLecture(course.schedule),
       };
     });
-  }, [classes, teachers, records, today]);
+  }, [filteredCourses, faculty, records, today]);
 
   const refresh = () => setRefreshKey((k) => k + 1);
 
-  const handleSave = (data: ClassFormData, id?: string) => {
-    const classroom: ClassRoom = {
+  const handleSave = (data: CourseFormData, id?: string) => {
+    const course: Course = {
       id: id ?? generateId(),
-      name: data.name.trim(),
-      section: data.section.trim(),
+      courseCode: data.courseCode.trim().toUpperCase(),
+      courseName: data.courseName.trim(),
       department: data.department.trim(),
-      teacherId: data.teacherId,
-      schedule: data.schedule,
+      semester: data.semester,
+      batch: data.batch.trim(),
+      facultyId: data.facultyId,
       studentIds: data.studentIds,
+      credits: data.credits,
+      schedule: data.schedule,
     };
-    save(KEYS.CLASSES, classroom);
+    save(KEYS.COURSES, course);
 
-    const allStudents = getAll<Student>(KEYS.STUDENTS);
     const studentSet = new Set(data.studentIds);
+    const allStudents = getAll<Student>(KEYS.STUDENTS);
     allStudents.forEach((s) => {
-      const inClass = studentSet.has(s.id);
-      if (inClass && s.classId !== classroom.id) {
-        save(KEYS.STUDENTS, {
-          ...s,
-          classId: classroom.id,
-          section: classroom.section,
-          department: classroom.department,
-        });
-      } else if (!inClass && s.classId === classroom.id) {
-        save(KEYS.STUDENTS, { ...s, classId: "" });
+      const inCourse = studentSet.has(s.id);
+      const courseIdSet = new Set(s.courseIds);
+      let changed = false;
+
+      if (inCourse && !courseIdSet.has(course.id)) {
+        courseIdSet.add(course.id);
+        changed = true;
+      } else if (!inCourse && courseIdSet.has(course.id)) {
+        courseIdSet.delete(course.id);
+        changed = true;
+      }
+
+      if (changed) {
+        save(KEYS.STUDENTS, { ...s, courseIds: Array.from(courseIdSet) });
       }
     });
 
-    const allClasses = getAll<ClassRoom>(KEYS.CLASSES);
-    allClasses.forEach((cls) => {
-      if (cls.id === classroom.id) return;
-      const filteredIds = cls.studentIds.filter((sid) => !studentSet.has(sid));
-      if (filteredIds.length !== cls.studentIds.length) {
-        save(KEYS.CLASSES, { ...cls, studentIds: filteredIds });
-      }
-    });
-
-    teachers.forEach((t) => {
-      const ids = t.classIds.filter((cid) => cid !== classroom.id);
-      if (t.id === classroom.teacherId) ids.push(classroom.id);
+    const allFaculty = getAll<Faculty>(KEYS.FACULTY);
+    allFaculty.forEach((f) => {
+      const ids = f.courseIds.filter((cid) => cid !== course.id);
+      if (f.id === course.facultyId) ids.push(course.id);
       if (
-        ids.length !== t.classIds.length ||
-        t.id === classroom.teacherId
+        ids.length !== f.courseIds.length ||
+        f.id === course.facultyId
       ) {
-        save(KEYS.TEACHERS, { ...t, classIds: [...new Set(ids)] });
+        save(KEYS.FACULTY, { ...f, courseIds: [...new Set(ids)] });
       }
     });
 
-    toast.success(id ? "Class updated" : "Class created");
+    toast.success(id ? "Course updated" : "Course created");
     refresh();
   };
 
   const handleDeleteConfirmed = () => {
     if (!deleteTarget) return;
-    const classroom = deleteTarget;
-    remove(KEYS.CLASSES, classroom.id);
+    const course = deleteTarget;
+    remove(KEYS.COURSES, course.id);
+
     const remainingStudents = getAll<Student>(KEYS.STUDENTS).map((s) =>
-      s.classId === classroom.id ? { ...s, classId: "" } : s
+      s.courseIds.includes(course.id)
+        ? { ...s, courseIds: s.courseIds.filter((c) => c !== course.id) }
+        : s
     );
     saveMany(KEYS.STUDENTS, remainingStudents);
-    const allTeachers = getAll<Teacher>(KEYS.TEACHERS);
-    allTeachers.forEach((t) => {
-      if (t.classIds.includes(classroom.id)) {
-        save(KEYS.TEACHERS, {
-          ...t,
-          classIds: t.classIds.filter((id) => id !== classroom.id),
+
+    const allFaculty = getAll<Faculty>(KEYS.FACULTY);
+    allFaculty.forEach((f) => {
+      if (f.courseIds.includes(course.id)) {
+        save(KEYS.FACULTY, {
+          ...f,
+          courseIds: f.courseIds.filter((id) => id !== course.id),
         });
       }
     });
     setDeleteTarget(null);
     refresh();
-    toast.success("Class deleted");
+    toast.success("Course deleted");
   };
 
   return (
@@ -178,68 +218,127 @@ export default function AdminClassesPage() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="font-display text-2xl font-semibold text-white">
-            Classes
+            Courses
           </h2>
-          <p className="text-sm text-slate-500">{classes.length} classes</p>
+          <p className="text-sm text-slate-500">
+            {filteredCourses.length} of {courses.length} courses
+          </p>
         </div>
         <button
           type="button"
           onClick={() => {
-            setEditClass(null);
+            setEditCourse(null);
             setModalOpen(true);
           }}
           className="flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white"
         >
-          <Plus className="h-4 w-4" /> Add Class
+          <Plus className="h-4 w-4" /> Add Course
         </button>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.02] p-3">
+        <div className="relative flex-1 min-w-[200px]">
+          <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search courses by code or name…"
+            className="w-full rounded-lg border border-white/10 bg-white/5 py-2 pl-9 pr-3 text-sm text-white"
+          />
+        </div>
+        <select
+          value={filterDept}
+          onChange={(e) => setFilterDept(e.target.value)}
+          className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white"
+        >
+          <option value="">All Departments</option>
+          {departments.map((d) => (
+            <option key={d} value={d}>
+              {d}
+            </option>
+          ))}
+        </select>
+        <select
+          value={filterSemester}
+          onChange={(e) =>
+            setFilterSemester(e.target.value as Semester | "")
+          }
+          className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white"
+        >
+          <option value="">All Semesters</option>
+          {(
+            ["1st", "2nd", "3rd", "4th", "5th", "6th", "7th", "8th"] as Semester[]
+          ).map((s) => (
+            <option key={s} value={s}>
+              {s} Sem
+            </option>
+          ))}
+        </select>
+        <select
+          value={filterBatch}
+          onChange={(e) => setFilterBatch(e.target.value)}
+          className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white"
+        >
+          <option value="">All Batches</option>
+          {batches.map((b) => (
+            <option key={b} value={b}>
+              {b}
+            </option>
+          ))}
+        </select>
       </div>
 
       <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
         {cardData.map((data) => (
-          <ClassCard
-            key={data.classroom.id}
+          <CourseCard
+            key={data.course.id}
             data={data}
-            onViewStudents={(cls) =>
-              router.push(`/admin/students?class=${encodeURIComponent(cls.id)}`)
+            onViewStudents={(c) =>
+              router.push(
+                `/admin/students?course=${encodeURIComponent(c.id)}`
+              )
             }
-            onEdit={(cls) => {
-              setEditClass(cls);
+            onEdit={(c) => {
+              setEditCourse(c);
               setModalOpen(true);
             }}
-            onDelete={(cls) => setDeleteTarget(cls)}
+            onDelete={(c) => setDeleteTarget(c)}
           />
         ))}
       </div>
 
-      {classes.length === 0 && (
+      {filteredCourses.length === 0 && (
         <div className="rounded-2xl border border-white/10 bg-white/[0.02] py-16 text-center">
           <p className="text-sm text-slate-400">
-            No classes yet. Create your first class to get started.
+            {courses.length === 0
+              ? "No courses yet. Create your first course to get started."
+              : "No courses match your filters."}
           </p>
         </div>
       )}
 
-      <ClassModal
+      <CourseModal
         open={modalOpen}
         onClose={() => {
           setModalOpen(false);
-          setEditClass(null);
+          setEditCourse(null);
         }}
         onSave={handleSave}
-        teachers={teachers}
+        faculty={faculty}
         students={students}
-        editClass={editClass}
+        editCourse={editCourse}
       />
-      <DeleteClassModal
-        classroom={deleteTarget}
+      <DeleteCourseModal
+        course={deleteTarget}
         studentCount={
           deleteTarget
-            ? students.filter((s) => s.classId === deleteTarget.id).length
+            ? students.filter((s) => s.courseIds.includes(deleteTarget.id))
+                .length
             : 0
         }
         recordCount={
           deleteTarget
-            ? records.filter((r) => r.classId === deleteTarget.id).length
+            ? records.filter((r) => r.courseId === deleteTarget.id).length
             : 0
         }
         onClose={() => setDeleteTarget(null)}

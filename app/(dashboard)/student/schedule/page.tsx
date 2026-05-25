@@ -9,10 +9,10 @@ import { KEYS, getAll, getCurrentUser } from "@/lib/storage";
 import { calculateAttendancePercent, cn } from "@/lib/utils";
 import type {
   AttendanceRecord,
-  ClassRoom,
+  Course,
+  Faculty,
   ScheduleSlot,
   Student,
-  Teacher,
 } from "@/types";
 
 const WEEKDAYS: ScheduleSlot["day"][] = [
@@ -33,6 +33,11 @@ const SUBJECT_COLORS = [
   "from-amber-500/30 to-orange-700/20 border-amber-500/30 text-amber-200",
   "from-fuchsia-500/30 to-violet-700/20 border-fuchsia-500/30 text-fuchsia-200",
 ];
+
+interface EnrichedSlot extends ScheduleSlot {
+  course: Course;
+  faculty: Faculty | null;
+}
 
 function getCurrentDayName(): ScheduleSlot["day"] | null {
   const idx = new Date().getDay();
@@ -82,7 +87,11 @@ function buildSubjectStats(
   records.forEach((r) => {
     const entry = map.get(r.subjectId) ?? { attended: 0, total: 0, percent: 0 };
     entry.total += 1;
-    if (r.status === "present" || r.status === "late" || r.status === "half-day") {
+    if (
+      r.status === "present" ||
+      r.status === "late" ||
+      r.status === "half-day"
+    ) {
       entry.attended += 1;
     }
     map.set(r.subjectId, entry);
@@ -93,7 +102,7 @@ function buildSubjectStats(
   return map;
 }
 
-export default function StudentSchedulePage() {
+export default function StudentTimetablePage() {
   const [loading, setLoading] = useState(true);
   const [refreshKey] = useState(0);
   const now = useNow(1000);
@@ -111,12 +120,11 @@ export default function StudentSchedulePage() {
       students.find((s) => s.email === user.email);
     if (!student) return null;
 
-    const classes = getAll<ClassRoom>(KEYS.CLASSES);
-    const classRoom = classes.find((c) => c.id === student.classId) ?? null;
-    const teachers = getAll<Teacher>(KEYS.TEACHERS);
-    const teacher = classRoom
-      ? teachers.find((t) => t.id === classRoom.teacherId) ?? null
-      : null;
+    const allCourses = getAll<Course>(KEYS.COURSES);
+    const myCourses = allCourses.filter((c) =>
+      student.courseIds.includes(c.id)
+    );
+    const allFaculty = getAll<Faculty>(KEYS.FACULTY);
 
     const records = getAll<AttendanceRecord>(KEYS.ATTENDANCE).filter(
       (r) => r.studentId === student.id
@@ -127,7 +135,16 @@ export default function StudentSchedulePage() {
       student.id
     );
 
-    return { student, classRoom, teacher, subjectStats, overall };
+    const allSlots: EnrichedSlot[] = myCourses.flatMap((course) =>
+      course.schedule.map((slot) => ({
+        ...slot,
+        course,
+        faculty:
+          allFaculty.find((f) => f.id === course.facultyId) ?? null,
+      }))
+    );
+
+    return { student, myCourses, allFaculty, subjectStats, overall, allSlots };
   }, [refreshKey]);
 
   useEffect(() => {
@@ -137,13 +154,13 @@ export default function StudentSchedulePage() {
   const todayDay = getCurrentDayName();
 
   const todaySlots = useMemo(() => {
-    if (!data?.classRoom || !todayDay) return [];
-    return data.classRoom.schedule
+    if (!data || !todayDay) return [];
+    return data.allSlots
       .filter((s) => s.day === todayDay)
       .sort((a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime));
-  }, [data?.classRoom, todayDay]);
+  }, [data, todayDay]);
 
-  const nextClass = useMemo(() => {
+  const nextLecture = useMemo(() => {
     if (todaySlots.length === 0) return null;
     const nowMins = now.getHours() * 60 + now.getMinutes();
     return (
@@ -152,9 +169,9 @@ export default function StudentSchedulePage() {
   }, [todaySlots, now]);
 
   const countdown = useMemo(() => {
-    if (!nextClass) return null;
+    if (!nextLecture) return null;
     const target = new Date(now);
-    const [h, m] = nextClass.startTime.split(":").map(Number);
+    const [h, m] = nextLecture.startTime.split(":").map(Number);
     target.setHours(h, m, 0, 0);
     const diffMs = target.getTime() - now.getTime();
     if (diffMs <= 0) return null;
@@ -163,7 +180,7 @@ export default function StudentSchedulePage() {
     const mm = Math.floor((totalSec % 3600) / 60);
     const ss = totalSec % 60;
     return { hh, mm, ss };
-  }, [nextClass, now]);
+  }, [nextLecture, now]);
 
   if (loading) {
     return (
@@ -178,25 +195,23 @@ export default function StudentSchedulePage() {
     return (
       <EmptyState
         icon={CalendarDays}
-        title="Schedule unavailable"
-        description="Please log in as a student to view your class schedule."
+        title="Timetable unavailable"
+        description="Please log in as a student to view your timetable."
       />
     );
   }
 
-  if (!data.classRoom) {
+  if (data.myCourses.length === 0) {
     return (
       <EmptyState
         icon={CalendarDays}
-        title="No class assigned"
-        description="Your account is not linked to a class. Contact your administrator."
+        title="No courses enrolled"
+        description="You are not enrolled in any course yet. Contact your administrator."
       />
     );
   }
 
-  const classRoom = data.classRoom;
-  const allSlots = classRoom.schedule;
-  const grid = buildTimetableGrid(allSlots);
+  const grid = buildTimetableGrid(data.allSlots);
 
   return (
     <motion.div
@@ -207,12 +222,11 @@ export default function StudentSchedulePage() {
     >
       <div>
         <h2 className="font-display text-2xl font-semibold text-white">
-          My Schedule
+          My Timetable
         </h2>
         <p className="mt-1 text-sm text-slate-400">
-          {classRoom.name} · {classRoom.section} ·{" "}
-          {classRoom.department}
-          {data.teacher ? ` · Class teacher: ${data.teacher.name}` : ""}
+          {data.student.department} · {data.student.semester} Semester · Batch{" "}
+          {data.student.batch}
         </p>
       </div>
 
@@ -226,7 +240,7 @@ export default function StudentSchedulePage() {
           <div className="mb-4 flex items-center justify-between">
             <h3 className="flex items-center gap-2 font-display text-lg font-semibold text-white">
               <CalendarDays className="h-5 w-5 text-indigo-400" />
-              Today&apos;s Classes
+              Today&apos;s Lectures
               {todayDay && (
                 <span className="text-sm font-normal text-slate-400">
                   · {todayDay}
@@ -234,12 +248,13 @@ export default function StudentSchedulePage() {
               )}
             </h3>
             <span className="rounded-full bg-indigo-500/20 px-3 py-1 text-xs text-indigo-200">
-              {todaySlots.length} {todaySlots.length === 1 ? "class" : "classes"}
+              {todaySlots.length}{" "}
+              {todaySlots.length === 1 ? "lecture" : "lectures"}
             </span>
           </div>
           {todaySlots.length === 0 ? (
             <p className="py-6 text-center text-sm text-slate-500">
-              No classes scheduled for today.
+              No lectures scheduled for today.
             </p>
           ) : (
             <ul className="space-y-3">
@@ -265,16 +280,18 @@ export default function StudentSchedulePage() {
                   >
                     <div className="flex min-w-0 flex-1 items-center gap-3">
                       <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-white/10 text-base font-bold">
-                        {slot.subject.slice(0, 2).toUpperCase()}
+                        {slot.course.courseCode.slice(0, 2)}
                       </div>
                       <div className="min-w-0">
                         <p className="truncate font-medium text-white">
+                          <span className="font-mono text-xs text-white/70">
+                            {slot.course.courseCode}
+                          </span>{" "}
                           {slot.subject}
                         </p>
                         <p className="truncate text-xs text-slate-300/80">
-                          {data.teacher?.name ?? "Class teacher"} · Room{" "}
-                          {classRoom.section}
-                          {classRoom.name.replace(/[^0-9]/g, "")}
+                          {slot.faculty?.name ?? "Faculty"} · Room{" "}
+                          {slot.room ?? "—"} · {slot.course.credits} credits
                         </p>
                       </div>
                     </div>
@@ -311,13 +328,20 @@ export default function StudentSchedulePage() {
         >
           <h3 className="mb-4 flex items-center gap-2 font-display text-lg font-semibold text-white">
             <Sparkles className="h-5 w-5 text-amber-400" />
-            Next Class
+            Next Lecture
           </h3>
-          {nextClass && countdown ? (
+          {nextLecture && countdown ? (
             <div className="text-center">
-              <p className="font-medium text-white">{nextClass.subject}</p>
+              <p className="font-mono text-xs text-indigo-300">
+                {nextLecture.course.courseCode}
+              </p>
+              <p className="font-medium text-white">{nextLecture.subject}</p>
               <p className="mt-1 text-xs text-slate-400">
-                Starts at {formatTimeLabel(nextClass.startTime)}
+                {nextLecture.faculty?.name ?? "Faculty"} · Room{" "}
+                {nextLecture.room ?? "—"}
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                Starts at {formatTimeLabel(nextLecture.startTime)}
               </p>
               <div className="mt-5 grid grid-cols-3 gap-2">
                 {[
@@ -343,8 +367,8 @@ export default function StudentSchedulePage() {
             <div className="py-6 text-center text-sm text-slate-500">
               <Clock className="mx-auto mb-2 h-8 w-8 text-slate-600" />
               {todaySlots.length === 0
-                ? "No classes today."
-                : "All classes are done for today."}
+                ? "No lectures today."
+                : "All lectures done for today."}
             </div>
           )}
         </motion.div>
@@ -369,7 +393,7 @@ export default function StudentSchedulePage() {
           <EmptyState
             icon={MapPin}
             title="No timetable yet"
-            description="Your class doesn't have any scheduled slots."
+            description="Your enrolled courses don't have any scheduled slots."
             className="py-8"
           />
         ) : (
@@ -431,11 +455,15 @@ export default function StudentSchedulePage() {
                             isToday && "ring-1 ring-indigo-400/40"
                           )}
                         >
+                          <p className="truncate font-mono text-[10px] text-white/70">
+                            {slot.course.courseCode}
+                          </p>
                           <p className="truncate text-sm font-semibold text-white">
                             {slot.subject}
                           </p>
                           <p className="mt-0.5 text-[10px] text-slate-200/70">
-                            {data.teacher?.name?.split(" ").slice(-1)[0] ?? ""}
+                            {slot.faculty?.name?.split(" ").slice(-1)[0] ?? ""}
+                            {slot.room ? ` · ${slot.room}` : ""}
                           </p>
                           {stats && stats.total > 0 && (
                             <p className="mt-1 text-[10px] font-medium text-white/80">
@@ -458,12 +486,12 @@ export default function StudentSchedulePage() {
 
 interface TimetableGrid {
   timeRanges: { key: string; label: string }[];
-  lookup: Map<string, ScheduleSlot>;
+  lookup: Map<string, EnrichedSlot>;
 }
 
-function buildTimetableGrid(slots: ScheduleSlot[]): TimetableGrid {
+function buildTimetableGrid(slots: EnrichedSlot[]): TimetableGrid {
   const ranges = new Map<string, string>();
-  const lookup = new Map<string, ScheduleSlot>();
+  const lookup = new Map<string, EnrichedSlot>();
   slots.forEach((s) => {
     const key = `${s.startTime}-${s.endTime}`;
     ranges.set(

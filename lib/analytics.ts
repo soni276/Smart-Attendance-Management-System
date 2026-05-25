@@ -1,7 +1,7 @@
 import { calculateAttendancePercent } from "@/lib/utils";
 import type {
   AttendanceRecord,
-  ClassRoom,
+  Course,
   Student,
 } from "@/types";
 
@@ -24,9 +24,10 @@ export interface DayTrend {
   percent: number;
 }
 
-export interface ClassSummary {
-  classId: string;
-  className: string;
+export interface CourseSummary {
+  courseId: string;
+  courseName: string;
+  courseCode: string;
   presentPercent: number;
   studentCount: number;
 }
@@ -41,7 +42,7 @@ export interface SubjectSummary {
 export interface Defaulter {
   student: Student;
   currentPercent: number;
-  classesNeeded: number;
+  sessionsNeeded: number;
   streak: number;
 }
 
@@ -117,25 +118,26 @@ export function getWeeklyTrend(
   return result;
 }
 
-export function getClasswiseSummary(
+export function getCoursewiseSummary(
   records: AttendanceRecord[],
-  classes: ClassRoom[],
+  courses: Course[],
   students: Student[]
-): ClassSummary[] {
-  return classes.map((cls) => {
-    const classRecs = records.filter((r) => r.classId === cls.id);
-    const attended = classRecs.filter((r) => isAttended(r.status)).length;
+): CourseSummary[] {
+  return courses.map((c) => {
+    const courseRecs = records.filter((r) => r.courseId === c.id);
+    const attended = courseRecs.filter((r) => isAttended(r.status)).length;
     const studentCount = students.filter(
-      (s) => s.classId === cls.id && s.isActive
+      (s) => s.courseIds.includes(c.id) && s.isActive
     ).length;
 
     return {
-      classId: cls.id,
-      className: cls.name,
+      courseId: c.id,
+      courseName: c.courseName,
+      courseCode: c.courseCode,
       presentPercent:
-        classRecs.length === 0
+        courseRecs.length === 0
           ? 0
-          : Math.round((attended / classRecs.length) * 100),
+          : Math.round((attended / courseRecs.length) * 100),
       studentCount,
     };
   });
@@ -143,7 +145,7 @@ export function getClasswiseSummary(
 
 export function getSubjectwiseSummary(
   records: AttendanceRecord[],
-  classes: ClassRoom[]
+  courses: Course[]
 ): SubjectSummary[] {
   const subjectMap = new Map<
     string,
@@ -151,7 +153,7 @@ export function getSubjectwiseSummary(
   >();
 
   const nameLookup = new Map<string, string>();
-  classes.forEach((c) =>
+  courses.forEach((c) =>
     c.schedule.forEach((s) => nameLookup.set(s.subjectId, s.subject))
   );
 
@@ -165,7 +167,7 @@ export function getSubjectwiseSummary(
     };
     entry.total++;
     if (isAttended(r.status)) entry.attended++;
-    entry.sessions.add(`${r.classId}_${r.date}`);
+    entry.sessions.add(`${r.courseId}_${r.date}`);
     subjectMap.set(key, entry);
   });
 
@@ -201,7 +203,7 @@ function consecutiveAbsenceStreak(
   return streak;
 }
 
-export function classesNeededToReachThreshold(
+export function sessionsNeededToReachThreshold(
   currentPercent: number,
   totalSessions: number,
   attendedSessions: number,
@@ -229,7 +231,7 @@ export function getDefaulters(
       return {
         student,
         currentPercent,
-        classesNeeded: classesNeededToReachThreshold(
+        sessionsNeeded: sessionsNeededToReachThreshold(
           currentPercent,
           studentRecs.length,
           attended,
@@ -281,7 +283,7 @@ export function getAnomalyData(
 
   const buckets = new Map<string, AttendanceRecord[]>();
   records.forEach((r) => {
-    const key = `${r.classId}_${r.subjectId}_${r.date}`;
+    const key = `${r.courseId}_${r.subjectId}_${r.date}`;
     const list = buckets.get(key) ?? [];
     list.push(r);
     buckets.set(key, list);
@@ -360,7 +362,7 @@ export function getAnomalyData(
   }
 
   const rapidScans = records.filter((r) => {
-    const bucket = buckets.get(`${r.classId}_${r.subjectId}_${r.date}`) ?? [];
+    const bucket = buckets.get(`${r.courseId}_${r.subjectId}_${r.date}`) ?? [];
     const sorted = bucket.sort(
       (a, b) =>
         new Date(a.markedAt).getTime() - new Date(b.markedAt).getTime()
@@ -409,7 +411,7 @@ export function generateAIInsights(
   summary: Summary,
   trends: DayTrend[],
   defaulters: Defaulter[],
-  classSummaries: ClassSummary[],
+  courseSummaries: CourseSummary[],
   subjectSummaries: SubjectSummary[]
 ): string {
   const trendLines = trends
@@ -423,19 +425,19 @@ export function generateAIInsights(
     .slice(0, 10)
     .map(
       (d) =>
-        `${d.student.name} (${d.student.rollNo}): ${d.currentPercent}%, needs ${d.classesNeeded} more sessions, ${d.streak} day absence streak`
+        `${d.student.name} (${d.student.enrollmentNo}): ${d.currentPercent}%, needs ${d.sessionsNeeded} more sessions, ${d.streak} day absence streak`
     )
     .join("\n");
 
-  const classLines = classSummaries
-    .map((c) => `${c.className}: ${c.presentPercent}% (${c.studentCount} students)`)
+  const courseLines = courseSummaries
+    .map((c) => `${c.courseCode} ${c.courseName}: ${c.presentPercent}% (${c.studentCount} students)`)
     .join("\n");
 
   const subjectLines = subjectSummaries
     .map((s) => `${s.subject}: ${s.presentPercent}% over ${s.totalSessions} sessions`)
     .join("\n");
 
-  return `You are an expert school attendance analyst. Analyze this real attendance data and provide 4-5 actionable insights in markdown format.
+  return `You are an expert university attendance analyst. Analyze this real attendance data and provide 4-5 actionable insights in markdown format.
 
 Use this exact structure for EACH insight:
 ### [Emoji] Title
@@ -452,14 +454,14 @@ DATA SUMMARY:
 WEEKLY TREND:
 ${trendLines}
 
-CLASS PERFORMANCE:
-${classLines}
+COURSE PERFORMANCE:
+${courseLines}
 
-SUBJECT PERFORMANCE:
+SUBJECT/PAPER PERFORMANCE:
 ${subjectLines}
 
-DEFAULTERS (below threshold):
+DEFAULTERS (below university minimum attendance norm):
 ${defaulterLines || "None"}
 
-Provide insights about patterns, risks, and recommendations. Be specific with percentages and day names.`;
+Provide insights about patterns, risks, and recommendations for faculty and administrators. Use university terminology (course, faculty, enrollment number, batch). Be specific with percentages and day names.`;
 }

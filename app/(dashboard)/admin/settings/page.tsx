@@ -58,7 +58,9 @@ export default function SettingsPage() {
   const [showKey, setShowKey] = useState(false);
   const [testing, setTesting] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState("");
-  const [logoPreview, setLogoPreview] = useState(settings.schoolLogo ?? "");
+  const [logoPreview, setLogoPreview] = useState(
+    settings.institutionLogo ?? ""
+  );
 
   useEffect(() => {
     setSettings(getSettings());
@@ -66,8 +68,8 @@ export default function SettingsPage() {
   }, []);
 
   useEffect(() => {
-    setLogoPreview(settings.schoolLogo ?? "");
-  }, [settings.schoolLogo]);
+    setLogoPreview(settings.institutionLogo ?? "");
+  }, [settings.institutionLogo]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -160,22 +162,53 @@ export default function SettingsPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-8 pb-12">
       <div>
-        <h2 className="font-display text-2xl font-semibold text-white">Settings</h2>
-        <p className="mt-1 text-slate-400">Configure your Smart Attendance System.</p>
+        <h2 className="font-display text-2xl font-semibold text-white">
+          Settings
+        </h2>
+        <p className="mt-1 text-slate-400">
+          Configure your Campus Attendance System.
+        </p>
       </div>
 
       <section className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-6">
         <h3 className="mb-4 flex items-center gap-2 font-display text-lg font-semibold text-white">
           <Shield className="h-5 w-5 text-indigo-400" />
-          General
+          Institution
         </h3>
-        <label className="block text-sm text-slate-400">School name</label>
+        <label className="block text-sm text-slate-400">Institution Name</label>
         <input
-          value={settings.schoolName}
-          onChange={(e) => update({ schoolName: e.target.value })}
+          value={settings.institutionName}
+          onChange={(e) => update({ institutionName: e.target.value })}
+          placeholder="e.g. Greenfield Institute of Technology"
           className="mt-1 w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-white"
         />
-        <label className="mt-4 block text-sm text-slate-400">School logo</label>
+
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <div>
+            <label className="block text-sm text-slate-400">Academic Year</label>
+            <input
+              value={settings.academicYear}
+              onChange={(e) => update({ academicYear: e.target.value })}
+              placeholder="2025-2026"
+              className="mt-1 w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-white"
+            />
+          </div>
+          <div>
+            <label className="block text-sm text-slate-400">
+              Current Semester
+            </label>
+            <input
+              value={settings.semesterName}
+              onChange={(e) => update({ semesterName: e.target.value })}
+              placeholder="Even Semester 2025-26"
+              className="mt-1 w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-white"
+            />
+          </div>
+        </div>
+
+        <label className="mt-4 block text-sm text-slate-400">
+          University Logo
+        </label>
         <div className="mt-2 flex items-center gap-4">
           <div
             className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-full border border-white/10 bg-white/5 bg-cover bg-center"
@@ -199,7 +232,7 @@ export default function SettingsPage() {
               reader.onload = () => {
                 const url = reader.result as string;
                 setLogoPreview(url);
-                update({ schoolLogo: url });
+                update({ institutionLogo: url });
               };
               reader.readAsDataURL(file);
             }}
@@ -266,7 +299,8 @@ export default function SettingsPage() {
           Attendance Rules
         </h3>
         <label className="text-sm text-slate-400">
-          Minimum attendance: {settings.minAttendancePercent}%
+          Minimum Attendance (University Norm):{" "}
+          {settings.minAttendancePercent}%
         </label>
         <input
           type="range"
@@ -435,7 +469,7 @@ export default function SettingsPage() {
               ))}
             </div>
             <p className="mt-2 text-center text-xs text-slate-500">
-              Map preview · center = school location
+              Map preview · center = campus location
             </p>
           </>
         )}

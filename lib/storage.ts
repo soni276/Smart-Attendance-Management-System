@@ -4,20 +4,20 @@ import type {
   AppSettings,
   AttendanceRecord,
   ChatMessage,
-  ClassRoom,
+  Course,
+  Faculty,
   FewShotExample,
   QRSession,
   SessionUser,
   Student,
-  Teacher,
 } from "@/types";
 import { generateId } from "@/lib/utils";
 
 export const KEYS = {
   STUDENTS: "sas_students",
-  TEACHERS: "sas_teachers",
+  FACULTY: "sas_faculty",
   ADMINS: "sas_admins",
-  CLASSES: "sas_classes",
+  COURSES: "sas_courses",
   ATTENDANCE: "sas_attendance",
   QR_SESSIONS: "sas_qr_sessions",
   CHAT_HISTORY: "sas_chat_history",
@@ -25,11 +25,13 @@ export const KEYS = {
   SETTINGS: "sas_settings",
   SESSION_USER: "sas_session_user",
   ANOMALIES: "sas_anomalies",
-  INITIALIZED: "sas_initialized",
+  INITIALIZED: "sas_initialized_v2",
 } as const;
 
 const DEFAULT_SETTINGS: AppSettings = {
-  schoolName: "Smart Attendance School",
+  institutionName: "Greenfield Institute of Technology",
+  academicYear: "2025-2026",
+  semesterName: "Even Semester 2025-26",
   minAttendancePercent: 75,
   qrExpirySeconds: 60,
   faceMatchThreshold: 0.5,
@@ -40,7 +42,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   theme: "dark",
   latenessMinutes: 10,
   absentMinutes: 25,
-  openaiModel: "gpt-4o",
+  openaiModel: "gpt-4o-mini",
 };
 
 function isBrowser(): boolean {
@@ -157,12 +159,12 @@ export function getAttendanceByStudent(studentId: string): AttendanceRecord[] {
   );
 }
 
-export function getAttendanceByClass(
-  classId: string,
+export function getAttendanceByCourse(
+  courseId: string,
   date?: string
 ): AttendanceRecord[] {
   return getAll<AttendanceRecord>(KEYS.ATTENDANCE).filter(
-    (r) => r.classId === classId && (date === undefined || r.date === date)
+    (r) => r.courseId === courseId && (date === undefined || r.date === date)
   );
 }
 
@@ -196,7 +198,7 @@ export function exportAllData(): Record<string, unknown> {
   const data: Record<string, unknown> = {
     _meta: {
       exportedAt: new Date().toISOString(),
-      version: 1,
+      version: 2,
     },
   };
   Object.values(KEYS).forEach((key) => {
@@ -252,4 +254,18 @@ export function addAnomalyFlag(
     resolved: false,
   });
   saveMany(KEYS.ANOMALIES, flags);
+}
+
+// Compatibility helpers — many places still call generic getters
+export function getAllStudents(): Student[] {
+  return getAll<Student>(KEYS.STUDENTS);
+}
+export function getAllFaculty(): Faculty[] {
+  return getAll<Faculty>(KEYS.FACULTY);
+}
+export function getAllCourses(): Course[] {
+  return getAll<Course>(KEYS.COURSES);
+}
+export function getAllAdmins(): Admin[] {
+  return getAll<Admin>(KEYS.ADMINS);
 }

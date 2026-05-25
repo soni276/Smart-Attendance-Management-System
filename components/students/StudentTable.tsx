@@ -9,7 +9,13 @@ import { cn } from "@/lib/utils";
 import type { Student } from "@/types";
 import type { StudentWithMeta } from "./StudentCard";
 
-export type SortKey = "name" | "rollNo" | "className" | "attendancePercent";
+export type SortKey =
+  | "name"
+  | "enrollmentNo"
+  | "department"
+  | "batch"
+  | "semester"
+  | "attendancePercent";
 export type SortDir = "asc" | "desc";
 
 interface StudentTableProps {
@@ -85,8 +91,10 @@ export function StudentTable({
               Photo
             </th>
             {th("name", "Name")}
-            {th("rollNo", "Roll No")}
-            {th("className", "Class")}
+            {th("enrollmentNo", "Enrollment No")}
+            {th("department", "Department")}
+            {th("semester", "Sem")}
+            {th("batch", "Batch")}
             {th("attendancePercent", "Attendance")}
             <th className="p-3 text-left text-xs font-medium uppercase text-slate-500">
               Status
@@ -124,8 +132,12 @@ export function StudentTable({
                 )}
               </td>
               <td className="p-3 font-medium text-white">{s.name}</td>
-              <td className="p-3 text-slate-400">{s.rollNo}</td>
-              <td className="p-3 text-slate-400">{s.className}</td>
+              <td className="p-3 font-mono text-slate-400">
+                {s.enrollmentNo}
+              </td>
+              <td className="p-3 text-slate-400">{s.department}</td>
+              <td className="p-3 text-slate-400">{s.semester}</td>
+              <td className="p-3 text-slate-400">{s.batch}</td>
               <td className="p-3">
                 <div className="flex min-w-[100px] items-center gap-2">
                   <div className="h-2 flex-1 overflow-hidden rounded-full bg-white/10">

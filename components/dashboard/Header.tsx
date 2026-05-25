@@ -26,7 +26,7 @@ import {
 import type {
   AnomalyFlag,
   AttendanceRecord,
-  ClassRoom,
+  Course,
   QRSession,
   SessionUser,
   Student,
@@ -35,23 +35,24 @@ import type {
 const PAGE_TITLES: Record<string, string> = {
   "/admin": "Dashboard",
   "/admin/students": "Students",
-  "/admin/classes": "Classes",
-  "/admin/mark-attendance": "Mark Attendance",
+  "/admin/faculty": "Faculty",
+  "/admin/classes": "Courses",
+  "/admin/mark-attendance": "Take Attendance",
   "/admin/analytics": "Analytics",
   "/admin/reports": "Reports",
   "/admin/settings": "Settings",
-  "/teacher": "Dashboard",
-  "/teacher/mark-attendance": "Mark Attendance",
-  "/teacher/my-classes": "My Classes",
-  "/teacher/reports": "Reports",
+  "/faculty": "Dashboard",
+  "/faculty/mark-attendance": "Take Attendance",
+  "/faculty/my-courses": "My Courses",
+  "/faculty/reports": "Reports",
   "/student": "My Attendance",
-  "/student/schedule": "Schedule",
+  "/student/schedule": "My Timetable",
 };
 
 function resolveTitle(pathname: string): string {
   if (PAGE_TITLES[pathname]) return PAGE_TITLES[pathname];
   const match = Object.keys(PAGE_TITLES)
-    .filter((k) => k !== "/admin" && k !== "/teacher" && k !== "/student")
+    .filter((k) => k !== "/admin" && k !== "/faculty" && k !== "/student")
     .find((k) => pathname.startsWith(k));
   return match ? PAGE_TITLES[match] : "Dashboard";
 }
@@ -79,7 +80,7 @@ function buildNotifications(user: SessionUser): NotificationItem[] {
   const settings = getSettings();
   const students = getAll<Student>(KEYS.STUDENTS);
   const records = getAll<AttendanceRecord>(KEYS.ATTENDANCE);
-  const classes = getAll<ClassRoom>(KEYS.CLASSES);
+  const courses = getAll<Course>(KEYS.COURSES);
   const sessions = getAll<QRSession>(KEYS.QR_SESSIONS);
   const anomalies = getAll<AnomalyFlag>(KEYS.ANOMALIES).filter(
     (a) => !a.resolved
@@ -88,16 +89,17 @@ function buildNotifications(user: SessionUser): NotificationItem[] {
   let scopedStudents = students.filter((s) => s.isActive);
   let scopedSessions = sessions.filter((s) => s.isActive);
 
-  if (user.role === "teacher") {
-    const myClasses = classes.filter((c) => c.teacherId === user.userId);
-    const ids = new Set(myClasses.map((c) => c.id));
-    scopedStudents = scopedStudents.filter((s) => ids.has(s.classId));
-    scopedSessions = scopedSessions.filter((s) => ids.has(s.classId));
+  if (user.role === "faculty") {
+    const myCourses = courses.filter((c) => c.facultyId === user.userId);
+    const courseIds = new Set(myCourses.map((c) => c.id));
+    const studentIds = new Set(myCourses.flatMap((c) => c.studentIds));
+    scopedStudents = scopedStudents.filter((s) => studentIds.has(s.id));
+    scopedSessions = scopedSessions.filter((s) => courseIds.has(s.courseId));
   } else if (user.role === "student") {
     scopedStudents = scopedStudents.filter((s) => s.id === user.userId);
-    scopedSessions = scopedSessions.filter(
-      (s) => students.find((st) => st.id === user.userId)?.classId === s.classId
-    );
+    const me = students.find((st) => st.id === user.userId);
+    const myCourseIds = new Set(me?.courseIds ?? []);
+    scopedSessions = scopedSessions.filter((s) => myCourseIds.has(s.courseId));
   }
 
   for (const s of scopedStudents) {
@@ -106,13 +108,13 @@ function buildNotifications(user: SessionUser): NotificationItem[] {
       items.push({
         id: `def-${s.id}`,
         type: "defaulter",
-        title: `${s.name} below threshold`,
-        description: `${pct}% attendance · target ${settings.minAttendancePercent}%`,
+        title: `${s.name} below university norm`,
+        description: `${pct}% attendance · minimum ${settings.minAttendancePercent}%`,
         href:
           user.role === "admin"
             ? "/admin/analytics"
-            : user.role === "teacher"
-              ? "/teacher/reports"
+            : user.role === "faculty"
+              ? "/faculty/reports"
               : "/student",
       });
     }
@@ -123,10 +125,10 @@ function buildNotifications(user: SessionUser): NotificationItem[] {
       id: `qr-${s.id}`,
       type: "session",
       title: `Live: ${s.subject}`,
-      description: `${s.className} · ${s.markedStudentIds.length} marked`,
+      description: `${s.courseCode} · ${s.markedStudentIds.length} marked`,
       href:
-        user.role === "teacher"
-          ? "/teacher/mark-attendance"
+        user.role === "faculty"
+          ? "/faculty/mark-attendance"
           : "/admin/mark-attendance",
       timestamp: s.startTime,
     });

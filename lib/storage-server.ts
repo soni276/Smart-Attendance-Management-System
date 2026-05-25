@@ -18,7 +18,9 @@ export { KEYS };
 const SERVER_STORE_PATH = path.join(process.cwd(), "data", "sas-store.json");
 
 const DEFAULT_SETTINGS: AppSettings = {
-  schoolName: "Smart Attendance School",
+  institutionName: "Greenfield Institute of Technology",
+  academicYear: "2025-2026",
+  semesterName: "Even Semester 2025-26",
   minAttendancePercent: 75,
   qrExpirySeconds: 60,
   faceMatchThreshold: 0.5,
@@ -29,7 +31,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   theme: "dark",
   latenessMinutes: 10,
   absentMinutes: 25,
-  openaiModel: "gpt-4o",
+  openaiModel: "gpt-4o-mini",
 };
 
 function readServerFile(): Record<string, string> {
@@ -109,12 +111,12 @@ export function update<T extends { id: string }>(
 
 export function saveSettings(s: Partial<AppSettings>): void {
   const merged = { ...getSettings(), ...s };
-  writeRaw("sas_settings", JSON.stringify(merged));
+  writeRaw(KEYS.SETTINGS, JSON.stringify(merged));
 }
 
 export function getSettings(): AppSettings {
   try {
-    const raw = readRaw("sas_settings");
+    const raw = readRaw(KEYS.SETTINGS);
     if (!raw) return { ...DEFAULT_SETTINGS };
     return { ...DEFAULT_SETTINGS, ...(JSON.parse(raw) as Partial<AppSettings>) };
   } catch {
@@ -123,11 +125,15 @@ export function getSettings(): AppSettings {
 }
 
 export function getActiveQRSession(): QRSession | null {
-  return getAll<QRSession>("sas_qr_sessions").find((s) => s.isActive) ?? null;
+  return (
+    getAll<QRSession>(KEYS.QR_SESSIONS).find((s) => s.isActive) ?? null
+  );
 }
 
 export function getAttendanceByDate(date: string): AttendanceRecord[] {
-  return getAll<AttendanceRecord>("sas_attendance").filter((r) => r.date === date);
+  return getAll<AttendanceRecord>(KEYS.ATTENDANCE).filter(
+    (r) => r.date === date
+  );
 }
 
 export function getFewShots(): FewShotExample[] {
@@ -147,14 +153,14 @@ export function saveFewShot(q: string, a: string): void {
 export function addAnomalyFlag(
   flag: Omit<AnomalyFlag, "id" | "detectedAt" | "resolved">
 ): void {
-  const flags = getAll<AnomalyFlag>("sas_anomalies");
+  const flags = getAll<AnomalyFlag>(KEYS.ANOMALIES);
   flags.push({
     ...flag,
     id: generateId(),
     detectedAt: new Date().toISOString(),
     resolved: false,
   });
-  saveMany("sas_anomalies", flags);
+  saveMany(KEYS.ANOMALIES, flags);
 }
 
 /** Merge client localStorage snapshot sent with API requests */

@@ -1,26 +1,47 @@
+export type Semester =
+  | "1st"
+  | "2nd"
+  | "3rd"
+  | "4th"
+  | "5th"
+  | "6th"
+  | "7th"
+  | "8th";
+
 export interface Student {
   id: string;
   name: string;
-  rollNo: string;
+  enrollmentNo: string;
   email: string;
-  classId: string;
-  section: string;
+  phone: string;
   department: string;
+  semester: Semester;
+  batch: string;
+  courseIds: string[];
   photoURL: string;
   faceDescriptor: number[] | null;
   enrolledAt: string;
   isActive: boolean;
-  phone?: string;
 }
 
-export interface Teacher {
+export type FacultyDesignation =
+  | "Assistant Professor"
+  | "Associate Professor"
+  | "Professor"
+  | "Visiting Faculty"
+  | "Lecturer";
+
+export interface Faculty {
   id: string;
   name: string;
   email: string;
   password: string;
-  subjects: string[];
-  classIds: string[];
-  role: "teacher";
+  employeeId: string;
+  designation: FacultyDesignation;
+  department: string;
+  specialisation: string[];
+  courseIds: string[];
+  role: "faculty";
   avatar?: string;
 }
 
@@ -32,13 +53,16 @@ export interface Admin {
   role: "admin";
 }
 
-export interface ClassRoom {
+export interface Course {
   id: string;
-  name: string;
-  section: string;
+  courseName: string;
+  courseCode: string;
   department: string;
-  teacherId: string;
+  semester: Semester;
+  batch: string;
+  facultyId: string;
   studentIds: string[];
+  credits: number;
   schedule: ScheduleSlot[];
 }
 
@@ -54,16 +78,18 @@ export interface ScheduleSlot {
   subjectId: string;
   startTime: string;
   endTime: string;
+  room?: string;
 }
 
 export interface AttendanceRecord {
   id: string;
   studentId: string;
-  classId: string;
+  courseId: string;
   subjectId: string;
   date: string;
   status: "present" | "absent" | "late" | "half-day";
   markedBy: string;
+  facultyId: string;
   markedAt: string;
   method: "face-qr" | "manual" | "face-only";
   latenessMinutes?: number;
@@ -71,12 +97,13 @@ export interface AttendanceRecord {
 
 export interface QRSession {
   id: string;
-  classId: string;
+  courseId: string;
   subjectId: string;
   subject: string;
-  teacherId: string;
-  teacherName: string;
-  className: string;
+  facultyId: string;
+  facultyName: string;
+  courseName: string;
+  courseCode: string;
   date: string;
   windowSlot: string;
   startTime: string;
@@ -93,9 +120,9 @@ export interface QRSession {
 
 export interface QRPayload {
   sessionId: string;
-  classId: string;
+  courseId: string;
   subjectId: string;
-  teacherId: string;
+  facultyId: string;
   windowSlot: string;
   issuedAt: number;
   expiresAt: number;
@@ -123,8 +150,10 @@ export interface FewShotExample {
 }
 
 export interface AppSettings {
-  schoolName: string;
-  schoolLogo?: string;
+  institutionName: string;
+  institutionLogo?: string;
+  academicYear: string;
+  semesterName: string;
   minAttendancePercent: number;
   qrExpirySeconds: number;
   faceMatchThreshold: number;
@@ -141,7 +170,7 @@ export interface AppSettings {
 
 export interface SessionUser {
   userId: string;
-  role: "admin" | "teacher" | "student";
+  role: "admin" | "faculty" | "student";
   name: string;
   email: string;
   token: string;

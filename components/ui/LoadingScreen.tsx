@@ -8,7 +8,7 @@ interface LoadingScreenProps {
 }
 
 export function LoadingScreen({
-  message = "Loading Smart Attendance System...",
+  message = "Loading Campus Attendance System...",
 }: LoadingScreenProps) {
   return (
     <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-[#0a0a0f]">

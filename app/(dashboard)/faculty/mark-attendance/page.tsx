@@ -22,15 +22,21 @@ import {
   save,
   saveMany,
 } from "@/lib/storage";
-import { cn, formatDate, formatTime, generateId, getTodayString } from "@/lib/utils";
+import {
+  cn,
+  formatDate,
+  formatTime,
+  generateId,
+  getTodayString,
+} from "@/lib/utils";
 import type {
   AttendanceRecord,
-  ClassRoom,
+  Course,
+  Faculty,
   QRPayload,
   QRSession,
   ScheduleSlot,
   Student,
-  Teacher,
 } from "@/types";
 
 type TabMode = "qr" | "manual";
@@ -75,27 +81,47 @@ const STATUS_OPTIONS: {
   label: string;
   color: string;
 }[] = [
-  { value: "present", label: "P", color: "bg-green-500/20 text-green-400 border-green-500/40" },
-  { value: "late", label: "L", color: "bg-yellow-500/20 text-yellow-400 border-yellow-500/40" },
-  { value: "absent", label: "A", color: "bg-red-500/20 text-red-400 border-red-500/40" },
-  { value: "half-day", label: "H", color: "bg-orange-500/20 text-orange-400 border-orange-500/40" },
+  {
+    value: "present",
+    label: "P",
+    color: "bg-green-500/20 text-green-400 border-green-500/40",
+  },
+  {
+    value: "late",
+    label: "L",
+    color: "bg-yellow-500/20 text-yellow-400 border-yellow-500/40",
+  },
+  {
+    value: "absent",
+    label: "A",
+    color: "bg-red-500/20 text-red-400 border-red-500/40",
+  },
+  {
+    value: "half-day",
+    label: "H",
+    color: "bg-orange-500/20 text-orange-400 border-orange-500/40",
+  },
 ];
 
-export default function MarkAttendancePage() {
+export default function FacultyMarkAttendancePage() {
   const [tab, setTab] = useState<TabMode>("qr");
   const [loading, setLoading] = useState(false);
   const [showEndModal, setShowEndModal] = useState(false);
 
   const user = getCurrentUser();
   const settings = getSettings();
-  const teachers = getAll<Teacher>(KEYS.TEACHERS);
-  const teacher = teachers.find((t) => t.id === user?.userId);
+  const allFaculty = getAll<Faculty>(KEYS.FACULTY);
+  const faculty =
+    allFaculty.find((f) => f.id === user?.userId) ??
+    allFaculty.find((f) => f.email === user?.email);
 
-  const teacherClasses = useMemo(() => {
-    const classes = getAll<ClassRoom>(KEYS.CLASSES);
-    if (!teacher) return [];
-    return classes.filter((c) => teacher.classIds.includes(c.id));
-  }, [teacher]);
+  const facultyCourses = useMemo(() => {
+    const courses = getAll<Course>(KEYS.COURSES);
+    if (!faculty) return [];
+    return courses.filter(
+      (c) => faculty.courseIds.includes(c.id) || c.facultyId === faculty.id
+    );
+  }, [faculty]);
 
   const [activeSession, setActiveSession] = useState<QRSession | null>(null);
   const activeSessionRef = useRef<QRSession | null>(null);
@@ -105,39 +131,41 @@ export default function MarkAttendancePage() {
 
   activeSessionRef.current = activeSession;
 
-  const [classId, setClassId] = useState("");
+  const [courseId, setCourseId] = useState("");
   const [subjectId, setSubjectId] = useState("");
   const [startTime, setStartTime] = useState(nowHHMM());
   const [endTime, setEndTime] = useState(addHourHHMM(nowHHMM()));
   const [lateAfter, setLateAfter] = useState(10);
   const [absentAfter, setAbsentAfter] = useState(25);
 
-  const [manualClassId, setManualClassId] = useState("");
+  const [manualCourseId, setManualCourseId] = useState("");
   const [manualSubjectId, setManualSubjectId] = useState("");
   const [manualDate, setManualDate] = useState(getTodayString());
   const [manualStudents, setManualStudents] = useState<Student[]>([]);
-  const [manualMarks, setManualMarks] = useState<Record<string, AttendanceStatus>>({});
+  const [manualMarks, setManualMarks] = useState<
+    Record<string, AttendanceStatus>
+  >({});
 
-  const selectedClass = teacherClasses.find((c) => c.id === classId);
+  const selectedCourse = facultyCourses.find((c) => c.id === courseId);
   const dayName = getCurrentDayName();
 
   const scheduleSlots = useMemo(() => {
-    if (!selectedClass || !dayName) return [];
-    return selectedClass.schedule.filter((s) => s.day === dayName);
-  }, [selectedClass, dayName]);
+    if (!selectedCourse || !dayName) return [];
+    return selectedCourse.schedule.filter((s) => s.day === dayName);
+  }, [selectedCourse, dayName]);
 
   useEffect(() => {
-    if (!teacher || !user || sessionRestoredRef.current) return;
+    if (!faculty || !user || sessionRestoredRef.current) return;
 
     const sessions = getAll<QRSession>(KEYS.QR_SESSIONS);
     const active = sessions.find(
-      (s) => s.isActive && s.teacherId === user.userId
+      (s) => s.isActive && s.facultyId === user.userId
     );
     if (!active) return;
 
     sessionRestoredRef.current = true;
     setActiveSession(active);
-    setClassId(active.classId);
+    setCourseId(active.courseId);
     setSubjectId(active.subjectId);
 
     (async () => {
@@ -175,7 +203,7 @@ export default function MarkAttendancePage() {
         );
       }
     })();
-  }, [teacher, user]);
+  }, [faculty, user]);
 
   useEffect(() => {
     if (scheduleSlots.length === 1) {
@@ -184,20 +212,20 @@ export default function MarkAttendancePage() {
   }, [scheduleSlots]);
 
   useEffect(() => {
-    if (teacherClasses.length === 1 && !classId) {
-      setClassId(teacherClasses[0].id);
+    if (facultyCourses.length === 1 && !courseId) {
+      setCourseId(facultyCourses[0].id);
     }
-  }, [teacherClasses, classId]);
+  }, [facultyCourses, courseId]);
 
   const handleStartSession = async () => {
-    if (!user || !teacher || !selectedClass || !subjectId) {
-      toast.error("Please select class and subject");
+    if (!user || !faculty || !selectedCourse || !subjectId) {
+      toast.error("Please select course and subject");
       return;
     }
 
-    const slot = selectedClass.schedule.find((s) => s.subjectId === subjectId);
+    const slot = selectedCourse.schedule.find((s) => s.subjectId === subjectId);
     if (!slot) {
-      toast.error("Invalid subject for this class");
+      toast.error("Invalid subject for this course");
       return;
     }
 
@@ -207,12 +235,13 @@ export default function MarkAttendancePage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          classId,
+          courseId,
           subjectId,
           subject: slot.subject,
-          teacherId: user.userId,
-          teacherName: user.name,
-          className: selectedClass.name,
+          facultyId: user.userId,
+          facultyName: user.name,
+          courseName: selectedCourse.courseName,
+          courseCode: selectedCourse.courseCode,
           startTime,
           endTime,
           lateAfterMinutes: lateAfter,
@@ -291,7 +320,7 @@ export default function MarkAttendancePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           sessionId: activeSession.id,
-          teacherId: user.userId,
+          facultyId: user.userId,
           _store: buildClientStoreSnapshot(),
         }),
       });
@@ -302,10 +331,12 @@ export default function MarkAttendancePage() {
       const ended = { ...activeSession, isActive: false };
       upsertQRSession(ended);
 
-      const cls = teacherClasses.find((c) => c.id === activeSession.classId);
-      if (cls) {
+      const course = facultyCourses.find(
+        (c) => c.id === activeSession.courseId
+      );
+      if (course) {
         const markedAt = new Date().toISOString();
-        const unmarked = cls.studentIds.filter(
+        const unmarked = course.studentIds.filter(
           (id) => !activeSession.markedStudentIds.includes(id)
         );
         const existing = getAll<AttendanceRecord>(KEYS.ATTENDANCE);
@@ -313,7 +344,7 @@ export default function MarkAttendancePage() {
           const dup = existing.find(
             (r) =>
               r.studentId === studentId &&
-              r.classId === activeSession.classId &&
+              r.courseId === activeSession.courseId &&
               r.subjectId === activeSession.subjectId &&
               r.date === activeSession.date
           );
@@ -321,11 +352,12 @@ export default function MarkAttendancePage() {
             save(KEYS.ATTENDANCE, {
               id: generateId(),
               studentId,
-              classId: activeSession.classId,
+              courseId: activeSession.courseId,
               subjectId: activeSession.subjectId,
               date: activeSession.date,
               status: "absent",
               markedBy: user.userId,
+              facultyId: user.userId,
               markedAt,
               method: "manual",
             });
@@ -347,13 +379,13 @@ export default function MarkAttendancePage() {
   };
 
   const handleLoadManualStudents = () => {
-    const cls = teacherClasses.find((c) => c.id === manualClassId);
-    if (!cls) {
-      toast.error("Select a class");
+    const course = facultyCourses.find((c) => c.id === manualCourseId);
+    if (!course) {
+      toast.error("Select a course");
       return;
     }
     const students = getAll<Student>(KEYS.STUDENTS).filter(
-      (s) => cls.studentIds.includes(s.id) && s.isActive
+      (s) => course.studentIds.includes(s.id) && s.isActive
     );
     setManualStudents(students);
     const marks: Record<string, AttendanceStatus> = {};
@@ -376,8 +408,13 @@ export default function MarkAttendancePage() {
   }, [manualMarks]);
 
   const handleManualSubmit = () => {
-    if (!user || !manualClassId || !manualSubjectId || manualStudents.length === 0) {
-      toast.error("Load students and select class/subject first");
+    if (
+      !user ||
+      !manualCourseId ||
+      !manualSubjectId ||
+      manualStudents.length === 0
+    ) {
+      toast.error("Load students and select course/subject first");
       return;
     }
 
@@ -389,22 +426,28 @@ export default function MarkAttendancePage() {
       const dup = existing.find(
         (r) =>
           r.studentId === student.id &&
-          r.classId === manualClassId &&
+          r.courseId === manualCourseId &&
           r.subjectId === manualSubjectId &&
           r.date === manualDate
       );
 
       if (dup) {
-        save(KEYS.ATTENDANCE, { ...dup, status, markedAt: new Date().toISOString(), method: "manual" });
+        save(KEYS.ATTENDANCE, {
+          ...dup,
+          status,
+          markedAt: new Date().toISOString(),
+          method: "manual",
+        });
       } else {
         save(KEYS.ATTENDANCE, {
           id: generateId(),
           studentId: student.id,
-          classId: manualClassId,
+          courseId: manualCourseId,
           subjectId: manualSubjectId,
           date: manualDate,
           status,
           markedBy: user.userId,
+          facultyId: user.userId,
           markedAt: new Date().toISOString(),
           method: "manual",
         });
@@ -415,13 +458,15 @@ export default function MarkAttendancePage() {
     toast.success(`Saved attendance for ${saved} students`);
   };
 
-  const activeClassRoom = teacherClasses.find(
-    (c) => c.id === activeSession?.classId
+  const activeCourse = facultyCourses.find(
+    (c) => c.id === activeSession?.courseId
   );
 
-  if (!user || !teacher) {
+  if (!user || !faculty) {
     return (
-      <p className="text-slate-400">Please log in as a teacher to mark attendance.</p>
+      <p className="text-slate-400">
+        Please log in as faculty to take attendance.
+      </p>
     );
   }
 
@@ -430,10 +475,10 @@ export default function MarkAttendancePage() {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h2 className="font-display text-2xl font-semibold text-white">
-            Mark Attendance
+            Take Attendance
           </h2>
           <p className="text-sm text-slate-500">
-            QR session or manual entry
+            QR session or manual entry · {settings.semesterName}
           </p>
         </div>
 
@@ -487,19 +532,21 @@ export default function MarkAttendancePage() {
                 </h3>
                 <div className="space-y-4">
                   <div>
-                    <label className="mb-1 block text-xs text-slate-500">Class</label>
+                    <label className="mb-1 block text-xs text-slate-500">
+                      Course
+                    </label>
                     <select
-                      value={classId}
+                      value={courseId}
                       onChange={(e) => {
-                        setClassId(e.target.value);
+                        setCourseId(e.target.value);
                         setSubjectId("");
                       }}
                       className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-white outline-none focus:border-indigo-500/50"
                     >
-                      <option value="">Select class</option>
-                      {teacherClasses.map((c) => (
+                      <option value="">Select course</option>
+                      {facultyCourses.map((c) => (
                         <option key={c.id} value={c.id}>
-                          {c.name}
+                          {c.courseCode} · {c.courseName}
                         </option>
                       ))}
                     </select>
@@ -507,18 +554,19 @@ export default function MarkAttendancePage() {
 
                   <div>
                     <label className="mb-1 block text-xs text-slate-500">
-                      Subject {dayName ? `(${dayName})` : ""}
+                      Subject / Paper {dayName ? `(${dayName})` : ""}
                     </label>
                     <select
                       value={subjectId}
                       onChange={(e) => setSubjectId(e.target.value)}
-                      disabled={!classId}
+                      disabled={!courseId}
                       className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-white outline-none focus:border-indigo-500/50 disabled:opacity-50"
                     >
-                      <option value="">Select subject</option>
+                      <option value="">Select subject / paper</option>
                       {scheduleSlots.map((s) => (
                         <option key={s.subjectId} value={s.subjectId}>
                           {s.subject} ({s.startTime}–{s.endTime})
+                          {s.room ? ` · ${s.room}` : ""}
                         </option>
                       ))}
                     </select>
@@ -526,7 +574,9 @@ export default function MarkAttendancePage() {
 
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="mb-1 block text-xs text-slate-500">Start</label>
+                      <label className="mb-1 block text-xs text-slate-500">
+                        Start
+                      </label>
                       <input
                         type="time"
                         value={startTime}
@@ -535,7 +585,9 @@ export default function MarkAttendancePage() {
                       />
                     </div>
                     <div>
-                      <label className="mb-1 block text-xs text-slate-500">End</label>
+                      <label className="mb-1 block text-xs text-slate-500">
+                        End
+                      </label>
                       <input
                         type="time"
                         value={endTime}
@@ -547,7 +599,9 @@ export default function MarkAttendancePage() {
 
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="mb-1 block text-xs text-slate-500">Late after (min)</label>
+                      <label className="mb-1 block text-xs text-slate-500">
+                        Late after (min)
+                      </label>
                       <input
                         type="number"
                         value={lateAfter}
@@ -556,7 +610,9 @@ export default function MarkAttendancePage() {
                       />
                     </div>
                     <div>
-                      <label className="mb-1 block text-xs text-slate-500">Absent after (min)</label>
+                      <label className="mb-1 block text-xs text-slate-500">
+                        Absent after (min)
+                      </label>
                       <input
                         type="number"
                         value={absentAfter}
@@ -588,8 +644,10 @@ export default function MarkAttendancePage() {
                     qrString={qrString}
                     expirySeconds={settings.qrExpirySeconds}
                     sessionId={activeSession.id}
-                    signature={qrPayload?.signature ?? activeSession.currentSignature}
-                    classLabel={activeSession.className}
+                    signature={
+                      qrPayload?.signature ?? activeSession.currentSignature
+                    }
+                    courseLabel={`${activeSession.courseCode} · ${activeSession.courseName}`}
                     subjectLabel={activeSession.subject}
                     dateLabel={formatDate(activeSession.date)}
                     timeLabel={`${formatTime(activeSession.startTime)} – ${formatTime(activeSession.endTime)}`}
@@ -605,10 +663,10 @@ export default function MarkAttendancePage() {
                 </div>
 
                 <div className="lg:col-span-2">
-                  {activeClassRoom && (
+                  {activeCourse && (
                     <SessionFeed
                       session={activeSession}
-                      classRoom={activeClassRoom}
+                      course={activeCourse}
                       onSessionUpdate={handleSessionUpdate}
                     />
                   )}
@@ -633,29 +691,32 @@ export default function MarkAttendancePage() {
           >
             <div className="flex flex-wrap gap-4 rounded-2xl border border-white/[0.08] bg-white/[0.03] p-4">
               <select
-                value={manualClassId}
-                onChange={(e) => setManualClassId(e.target.value)}
+                value={manualCourseId}
+                onChange={(e) => setManualCourseId(e.target.value)}
                 className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white"
               >
-                <option value="">Class</option>
-                {teacherClasses.map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
+                <option value="">Course</option>
+                {facultyCourses.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.courseCode} · {c.courseName}
+                  </option>
                 ))}
               </select>
               <select
                 value={manualSubjectId}
                 onChange={(e) => setManualSubjectId(e.target.value)}
-                disabled={!manualClassId}
+                disabled={!manualCourseId}
                 className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white disabled:opacity-50"
               >
-                <option value="">Subject</option>
-                {(teacherClasses.find((c) => c.id === manualClassId)?.schedule ?? []).map(
-                  (s, i) => (
-                    <option key={`${s.subjectId}-${i}`} value={s.subjectId}>
-                      {s.subject}
-                    </option>
-                  )
-                )}
+                <option value="">Subject / Paper</option>
+                {(
+                  facultyCourses.find((c) => c.id === manualCourseId)
+                    ?.schedule ?? []
+                ).map((s, i) => (
+                  <option key={`${s.subjectId}-${i}`} value={s.subjectId}>
+                    {s.subject}
+                  </option>
+                ))}
               </select>
               <input
                 type="date"
@@ -680,7 +741,9 @@ export default function MarkAttendancePage() {
                     type="button"
                     onClick={() => {
                       const m: Record<string, AttendanceStatus> = {};
-                      manualStudents.forEach((s) => { m[s.id] = "present"; });
+                      manualStudents.forEach((s) => {
+                        m[s.id] = "present";
+                      });
                       setManualMarks(m);
                     }}
                     className="rounded-lg border border-green-500/30 px-3 py-1.5 text-xs text-green-400"
@@ -691,7 +754,9 @@ export default function MarkAttendancePage() {
                     type="button"
                     onClick={() => {
                       const m: Record<string, AttendanceStatus> = {};
-                      manualStudents.forEach((s) => { m[s.id] = "absent"; });
+                      manualStudents.forEach((s) => {
+                        m[s.id] = "absent";
+                      });
                       setManualMarks(m);
                     }}
                     className="rounded-lg border border-red-500/30 px-3 py-1.5 text-xs text-red-400"
@@ -702,7 +767,9 @@ export default function MarkAttendancePage() {
                     type="button"
                     onClick={() => {
                       const m: Record<string, AttendanceStatus> = {};
-                      manualStudents.forEach((s) => { m[s.id] = "present"; });
+                      manualStudents.forEach((s) => {
+                        m[s.id] = "present";
+                      });
                       setManualMarks(m);
                     }}
                     className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-slate-400"
@@ -725,7 +792,7 @@ export default function MarkAttendancePage() {
                     <thead>
                       <tr className="border-b border-white/[0.06] bg-white/[0.02] text-left text-slate-500">
                         <th className="p-4">Student</th>
-                        <th className="p-4">Roll No</th>
+                        <th className="p-4">Enrollment No</th>
                         <th className="p-4">Status</th>
                       </tr>
                     </thead>
@@ -740,7 +807,9 @@ export default function MarkAttendancePage() {
                               <span className="text-white">{s.name}</span>
                             </div>
                           </td>
-                          <td className="p-4 text-slate-400">{s.rollNo}</td>
+                          <td className="p-4 font-mono text-slate-400">
+                            {s.enrollmentNo}
+                          </td>
                           <td className="p-4">
                             <div className="flex gap-1">
                               {STATUS_OPTIONS.map((opt) => (
@@ -799,7 +868,8 @@ export default function MarkAttendancePage() {
               </h3>
             </div>
             <p className="text-sm text-slate-400">
-              This will close the session and mark all unmarked students as absent.
+              This will close the session and mark all unmarked students as
+              absent.
             </p>
             <div className="mt-6 flex gap-3">
               <button

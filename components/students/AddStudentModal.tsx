@@ -15,16 +15,28 @@ const FaceScanner = dynamic(
     ),
   }
 );
-import type { ClassRoom, Student } from "@/types";
+import type { Course, Semester, Student } from "@/types";
+
+const SEMESTERS: Semester[] = [
+  "1st",
+  "2nd",
+  "3rd",
+  "4th",
+  "5th",
+  "6th",
+  "7th",
+  "8th",
+];
 
 export interface StudentFormData {
   name: string;
-  rollNo: string;
+  enrollmentNo: string;
   email: string;
   phone: string;
-  classId: string;
-  section: string;
   department: string;
+  semester: Semester;
+  batch: string;
+  courseIds: string[];
   photoURL: string;
   faceDescriptor: number[] | null;
   isActive: boolean;
@@ -34,18 +46,19 @@ interface AddStudentModalProps {
   open: boolean;
   onClose: () => void;
   onSave: (data: StudentFormData, id?: string) => void;
-  classes: ClassRoom[];
+  courses: Course[];
   editStudent?: Student | null;
 }
 
 const emptyForm: StudentFormData = {
   name: "",
-  rollNo: "",
+  enrollmentNo: "",
   email: "",
   phone: "",
-  classId: "",
-  section: "",
   department: "",
+  semester: "1st",
+  batch: "",
+  courseIds: [],
   photoURL: "",
   faceDescriptor: null,
   isActive: true,
@@ -55,7 +68,7 @@ export function AddStudentModal({
   open,
   onClose,
   onSave,
-  classes,
+  courses,
   editStudent,
 }: AddStudentModalProps) {
   const [step, setStep] = useState(0);
@@ -70,12 +83,13 @@ export function AddStudentModal({
     if (editStudent) {
       setForm({
         name: editStudent.name,
-        rollNo: editStudent.rollNo,
+        enrollmentNo: editStudent.enrollmentNo,
         email: editStudent.email,
         phone: editStudent.phone ?? "",
-        classId: editStudent.classId,
-        section: editStudent.section,
         department: editStudent.department,
+        semester: editStudent.semester,
+        batch: editStudent.batch,
+        courseIds: [...editStudent.courseIds],
         photoURL: editStudent.photoURL,
         faceDescriptor: editStudent.faceDescriptor,
         isActive: editStudent.isActive,
@@ -85,23 +99,19 @@ export function AddStudentModal({
     }
   };
 
-  const handleOpen = () => {
-    reset();
-  };
-
   useEffect(() => {
-    if (open) handleOpen();
+    if (open) reset();
   }, [open, editStudent?.id]);
 
   const validateStep1 = (): boolean => {
     const e: Record<string, string> = {};
-    if (!form.name.trim()) e.name = "Name is required";
-    if (!form.rollNo.trim()) e.rollNo = "Roll number is required";
+    if (!form.name.trim()) e.name = "Full name is required";
+    if (!form.enrollmentNo.trim())
+      e.enrollmentNo = "Enrollment number is required";
     if (!form.email.trim() || !/\S+@\S+\.\S+/.test(form.email))
       e.email = "Valid email is required";
-    if (!form.classId) e.classId = "Class is required";
-    if (!form.section.trim()) e.section = "Section is required";
     if (!form.department.trim()) e.department = "Department is required";
+    if (!form.batch.trim()) e.batch = "Batch is required";
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -130,6 +140,13 @@ export function AddStudentModal({
     return () => document.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
+  const matchingCourses = courses.filter(
+    (c) =>
+      (form.department ? c.department === form.department : true) &&
+      (form.semester ? c.semester === form.semester : true) &&
+      (form.batch ? c.batch === form.batch : true)
+  );
+
   if (!open) return null;
 
   return (
@@ -147,26 +164,32 @@ export function AddStudentModal({
           <h2 className="font-display text-lg font-semibold text-white">
             {editStudent ? "Edit Student" : "Add Student"}
           </h2>
-          <button type="button" onClick={onClose} className="text-slate-400 hover:text-white">
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-slate-400 hover:text-white"
+          >
             <X className="h-5 w-5" />
           </button>
         </div>
 
         <div className="flex gap-2 px-6 pt-4">
-          {["Basic Info", "Photo & Face", "Review"].map((label, i) => (
-            <div
-              key={label}
-              className={`flex-1 rounded-lg py-1.5 text-center text-xs font-medium ${
-                step === i
-                  ? "bg-indigo-600 text-white"
-                  : step > i
-                    ? "bg-indigo-600/30 text-indigo-300"
-                    : "bg-white/5 text-slate-500"
-              }`}
-            >
-              {label}
-            </div>
-          ))}
+          {["Personal Info", "Photo & Face", "Enroll in Courses"].map(
+            (label, i) => (
+              <div
+                key={label}
+                className={`flex-1 rounded-lg py-1.5 text-center text-xs font-medium ${
+                  step === i
+                    ? "bg-indigo-600 text-white"
+                    : step > i
+                      ? "bg-indigo-600/30 text-indigo-300"
+                      : "bg-white/5 text-slate-500"
+                }`}
+              >
+                {label}
+              </div>
+            )
+          )}
         </div>
 
         <div className="flex-1 overflow-y-auto p-6">
@@ -179,83 +202,145 @@ export function AddStudentModal({
                 exit={{ opacity: 0, x: -20 }}
                 className="space-y-4"
               >
-                {(
-                  [
-                    ["name", "Name *", "text"],
-                    ["rollNo", "Roll No *", "text"],
-                    ["email", "Email *", "email"],
-                    ["phone", "Phone", "tel"],
-                  ] as const
-                ).map(([key, label, type]) => (
-                  <div key={key}>
-                    <label className="mb-1 block text-xs text-slate-500">{label}</label>
-                    <input
-                      type={type}
-                      value={form[key]}
-                      onChange={(e) =>
-                        setForm((f) => ({ ...f, [key]: e.target.value }))
-                      }
-                      className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-white outline-none focus:border-indigo-500/50"
-                    />
-                    {errors[key] && (
-                      <p className="mt-1 text-xs text-red-400">{errors[key]}</p>
-                    )}
-                  </div>
-                ))}
-                <div>
-                  <label className="mb-1 block text-xs text-slate-500">Class *</label>
-                  <select
-                    value={form.classId}
-                    onChange={(e) => {
-                      const cls = classes.find((c) => c.id === e.target.value);
-                      setForm((f) => ({
-                        ...f,
-                        classId: e.target.value,
-                        section: cls?.section ?? f.section,
-                        department: cls?.department ?? f.department,
-                      }));
-                    }}
-                    className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-white"
-                  >
-                    <option value="">Select class</option>
-                    {classes.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
-                  {errors.classId && (
-                    <p className="mt-1 text-xs text-red-400">{errors.classId}</p>
-                  )}
-                </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                   <div>
-                    <label className="mb-1 block text-xs text-slate-500">Section *</label>
+                    <label className="mb-1 block text-xs text-slate-500">
+                      Full Name *
+                    </label>
                     <input
-                      value={form.section}
+                      value={form.name}
                       onChange={(e) =>
-                        setForm((f) => ({ ...f, section: e.target.value }))
+                        setForm((f) => ({ ...f, name: e.target.value }))
                       }
                       className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-white"
                     />
-                    {errors.section && (
-                      <p className="mt-1 text-xs text-red-400">{errors.section}</p>
+                    {errors.name && (
+                      <p className="mt-1 text-xs text-red-400">{errors.name}</p>
                     )}
                   </div>
                   <div>
-                    <label className="mb-1 block text-xs text-slate-500">Department *</label>
+                    <label className="mb-1 block text-xs text-slate-500">
+                      Enrollment No *
+                    </label>
+                    <input
+                      value={form.enrollmentNo}
+                      onChange={(e) =>
+                        setForm((f) => ({
+                          ...f,
+                          enrollmentNo: e.target.value.toUpperCase(),
+                        }))
+                      }
+                      className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 font-mono text-white"
+                      placeholder="CSE22001"
+                    />
+                    {errors.enrollmentNo && (
+                      <p className="mt-1 text-xs text-red-400">
+                        {errors.enrollmentNo}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-xs text-slate-500">
+                      Email *
+                    </label>
+                    <input
+                      type="email"
+                      value={form.email}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, email: e.target.value }))
+                      }
+                      className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-white"
+                    />
+                    {errors.email && (
+                      <p className="mt-1 text-xs text-red-400">
+                        {errors.email}
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs text-slate-500">
+                      Phone
+                    </label>
+                    <input
+                      type="tel"
+                      value={form.phone}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, phone: e.target.value }))
+                      }
+                      className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-white"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-xs text-slate-500">
+                      Department *
+                    </label>
                     <input
                       value={form.department}
                       onChange={(e) =>
                         setForm((f) => ({ ...f, department: e.target.value }))
                       }
                       className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-white"
+                      list="dept-options-add"
                     />
+                    <datalist id="dept-options-add">
+                      <option value="Computer Science & Engineering" />
+                      <option value="Electronics & Communication" />
+                      <option value="Mechanical Engineering" />
+                      <option value="Civil Engineering" />
+                      <option value="Information Technology" />
+                    </datalist>
                     {errors.department && (
-                      <p className="mt-1 text-xs text-red-400">{errors.department}</p>
+                      <p className="mt-1 text-xs text-red-400">
+                        {errors.department}
+                      </p>
                     )}
                   </div>
+                  <div>
+                    <label className="mb-1 block text-xs text-slate-500">
+                      Semester *
+                    </label>
+                    <select
+                      value={form.semester}
+                      onChange={(e) =>
+                        setForm((f) => ({
+                          ...f,
+                          semester: e.target.value as Semester,
+                        }))
+                      }
+                      className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-white"
+                    >
+                      {SEMESTERS.map((s) => (
+                        <option key={s} value={s}>
+                          {s} Semester
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
+
+                <div>
+                  <label className="mb-1 block text-xs text-slate-500">
+                    Batch *
+                  </label>
+                  <input
+                    value={form.batch}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, batch: e.target.value }))
+                    }
+                    placeholder="e.g. 2022-2026"
+                    className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-white"
+                  />
+                  {errors.batch && (
+                    <p className="mt-1 text-xs text-red-400">{errors.batch}</p>
+                  )}
+                </div>
+
                 <label className="flex items-center gap-2 text-sm text-slate-300">
                   <input
                     type="checkbox"
@@ -324,7 +409,7 @@ export function AddStudentModal({
                 >
                   {form.faceDescriptor ? (
                     <span className="flex items-center justify-center gap-1">
-                      <Check className="h-4 w-4" /> Face enrolled ✓
+                      <Check className="h-4 w-4" /> Face enrolled
                     </span>
                   ) : (
                     "Not enrolled"
@@ -334,7 +419,11 @@ export function AddStudentModal({
             )}
 
             {step === 1 && showFaceScanner && (
-              <motion.div key="face" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+              <motion.div
+                key="face"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+              >
                 <FaceScanner
                   mode="enroll"
                   onEnrollComplete={(descriptor, photo) => {
@@ -363,30 +452,82 @@ export function AddStudentModal({
                 animate={{ opacity: 1, x: 0 }}
                 className="space-y-3 text-sm"
               >
-                <p>
-                  <span className="text-slate-500">Name:</span>{" "}
-                  <span className="text-white">{form.name}</span>
+                <p className="text-xs text-slate-400">
+                  Pick the courses to enroll this student in. Showing only
+                  courses matching department / semester / batch.
                 </p>
-                <p>
-                  <span className="text-slate-500">Roll:</span>{" "}
-                  <span className="text-white">{form.rollNo}</span>
-                </p>
-                <p>
-                  <span className="text-slate-500">Email:</span>{" "}
-                  <span className="text-white">{form.email}</span>
-                </p>
-                <p>
-                  <span className="text-slate-500">Class:</span>{" "}
-                  <span className="text-white">
-                    {classes.find((c) => c.id === form.classId)?.name}
-                  </span>
-                </p>
-                <p>
-                  <span className="text-slate-500">Face:</span>{" "}
-                  <span className={form.faceDescriptor ? "text-green-400" : "text-slate-400"}>
-                    {form.faceDescriptor ? "Enrolled" : "Not enrolled"}
-                  </span>
-                </p>
+                <div className="max-h-72 space-y-1 overflow-y-auto rounded-xl border border-white/10 p-2">
+                  {matchingCourses.length === 0 && (
+                    <p className="py-3 text-center text-xs text-slate-500">
+                      No matching courses for{" "}
+                      {form.department || "this department"} ·{" "}
+                      {form.semester} Sem · Batch {form.batch || "?"}
+                    </p>
+                  )}
+                  {matchingCourses.map((c) => (
+                    <label
+                      key={c.id}
+                      className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-white/5"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={form.courseIds.includes(c.id)}
+                        onChange={(e) => {
+                          setForm((f) => ({
+                            ...f,
+                            courseIds: e.target.checked
+                              ? [...f.courseIds, c.id]
+                              : f.courseIds.filter((id) => id !== c.id),
+                          }));
+                        }}
+                      />
+                      <span className="font-mono text-xs text-indigo-300">
+                        {c.courseCode}
+                      </span>
+                      <span className="text-sm text-white">
+                        {c.courseName}
+                      </span>
+                      <span className="ml-auto text-[10px] text-slate-500">
+                        {c.credits} cr
+                      </span>
+                    </label>
+                  ))}
+                </div>
+
+                <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3 text-xs text-slate-400">
+                  <p>
+                    <span className="text-slate-500">Name:</span>{" "}
+                    <span className="text-white">{form.name}</span>
+                  </p>
+                  <p>
+                    <span className="text-slate-500">Enrollment:</span>{" "}
+                    <span className="text-white font-mono">
+                      {form.enrollmentNo}
+                    </span>
+                  </p>
+                  <p>
+                    <span className="text-slate-500">Department:</span>{" "}
+                    <span className="text-white">{form.department}</span>
+                  </p>
+                  <p>
+                    <span className="text-slate-500">Semester / Batch:</span>{" "}
+                    <span className="text-white">
+                      {form.semester} · {form.batch}
+                    </span>
+                  </p>
+                  <p>
+                    <span className="text-slate-500">Face:</span>{" "}
+                    <span
+                      className={
+                        form.faceDescriptor
+                          ? "text-green-400"
+                          : "text-slate-400"
+                      }
+                    >
+                      {form.faceDescriptor ? "Enrolled" : "Not enrolled"}
+                    </span>
+                  </p>
+                </div>
               </motion.div>
             )}
           </AnimatePresence>

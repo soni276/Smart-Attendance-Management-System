@@ -4,9 +4,9 @@ export function buildClientStoreSnapshot(): Record<string, string> {
   if (typeof window === "undefined") return {};
   const keys = [
     "sas_students",
-    "sas_teachers",
+    "sas_faculty",
     "sas_admins",
-    "sas_classes",
+    "sas_courses",
     "sas_attendance",
     "sas_qr_sessions",
     "sas_settings",

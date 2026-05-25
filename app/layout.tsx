@@ -16,9 +16,9 @@ const syne = Syne({
 });
 
 export const metadata: Metadata = {
-  title: "Smart Attendance System | SAS",
+  title: "Campus Attendance System",
   description:
-    "AI-powered smart attendance with face recognition, dynamic QR, and real-time analytics.",
+    "AI-powered attendance for modern universities — face recognition, dynamic QR, course analytics.",
 };
 
 export const viewport: Viewport = {

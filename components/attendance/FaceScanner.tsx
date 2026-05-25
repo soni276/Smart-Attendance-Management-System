@@ -568,7 +568,9 @@ export function FaceScanner({
                   <p className="font-display text-lg font-semibold text-white">
                     {matchedStudent.name}
                   </p>
-                  <p className="text-sm text-slate-400">{matchedStudent.rollNo}</p>
+                  <p className="font-mono text-sm text-slate-400">
+                    {matchedStudent.enrollmentNo}
+                  </p>
                   <p className="mt-1 text-sm font-medium text-green-400">
                     {confidence}% match confidence
                   </p>

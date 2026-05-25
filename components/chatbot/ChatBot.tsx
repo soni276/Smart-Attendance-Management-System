@@ -15,7 +15,7 @@ import type { ChatMessage } from "@/types";
 const QUICK_ACTIONS = [
   "Who's absent today?",
   "Show defaulters",
-  "Class 10-A stats",
+  "CS301 stats",
   "Today's summary",
 ];
 
@@ -185,7 +185,7 @@ export function ChatBot() {
                   <Bot className="h-5 w-5 text-white" />
                 </div>
                 <div>
-                  <p className="font-display font-semibold text-white">SAS-Bot</p>
+                  <p className="font-display font-semibold text-white">CampusBot</p>
                   <p className="flex items-center gap-1.5 text-xs text-slate-400">
                     <span
                       className={cn(
@@ -368,7 +368,7 @@ export function ChatBot() {
         onClick={() => (open && !minimized ? setOpen(false) : handleOpen())}
         whileTap={{ scale: 0.92 }}
         className="fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-indigo-600 to-purple-600 text-white shadow-lg shadow-indigo-500/30"
-        aria-label="Open SAS-Bot"
+        aria-label="Open CampusBot"
       >
         <span className="absolute inset-0 animate-ping rounded-full bg-indigo-500/30" />
         <span className="absolute inset-0 rounded-full ring-2 ring-indigo-400/50 ring-offset-2 ring-offset-[#0a0a0f] animate-[pulse-ring_2s_ease-out_infinite]" />

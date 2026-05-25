@@ -6,7 +6,7 @@ import {
   setCurrentUser,
 } from "@/lib/storage";
 import { generateId } from "@/lib/utils";
-import type { Admin, SessionUser, Student, Teacher } from "@/types";
+import type { Admin, Faculty, SessionUser, Student } from "@/types";
 
 const SESSION_COOKIE = "sas_session";
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
@@ -43,16 +43,16 @@ export function login(
         token: generateId(),
       };
     }
-  } else if (role === "teacher") {
-    const teacher = getAll<Teacher>(KEYS.TEACHERS).find(
-      (t) => t.email.toLowerCase() === normalizedEmail
+  } else if (role === "faculty") {
+    const faculty = getAll<Faculty>(KEYS.FACULTY).find(
+      (f) => f.email.toLowerCase() === normalizedEmail
     );
-    if (teacher && teacher.password === normalizedPassword) {
+    if (faculty && faculty.password === normalizedPassword) {
       session = {
-        userId: teacher.id,
-        role: "teacher",
-        name: teacher.name,
-        email: teacher.email,
+        userId: faculty.id,
+        role: "faculty",
+        name: faculty.name,
+        email: faculty.email,
         token: generateId(),
       };
     }
@@ -60,7 +60,7 @@ export function login(
     const student = getAll<Student>(KEYS.STUDENTS).find(
       (s) => s.email.toLowerCase() === normalizedEmail
     );
-    if (student && student.rollNo === normalizedPassword) {
+    if (student && student.enrollmentNo === normalizedPassword) {
       session = {
         userId: student.id,
         role: "student",

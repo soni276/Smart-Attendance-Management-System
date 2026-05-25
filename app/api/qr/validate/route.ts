@@ -3,7 +3,7 @@ import { stringToQRPayload, validateQRPayload } from "@/lib/qr";
 import { parseApiBody, prepareStore } from "@/lib/api-utils";
 import { KEYS, getById, getSettings } from "@/lib/storage-server";
 import { isWithinGeoFence } from "@/lib/utils";
-import type { ClassRoom } from "@/types";
+import type { Course } from "@/types";
 
 interface ValidateBody {
   qrString: string;
@@ -45,11 +45,11 @@ export async function POST(request: Request) {
 
     const { session } = result;
 
-    const classroom = getById<ClassRoom>(KEYS.CLASSES, session.classId);
-    if (!classroom || !classroom.studentIds.includes(body.studentId)) {
+    const course = getById<Course>(KEYS.COURSES, session.courseId);
+    if (!course || !course.studentIds.includes(body.studentId)) {
       return NextResponse.json({
         valid: false,
-        error: "You are not enrolled in this class",
+        error: "You are not enrolled in this course",
       });
     }
 
@@ -80,7 +80,7 @@ export async function POST(request: Request) {
       if (!inFence) {
         return NextResponse.json({
           valid: false,
-          error: "You are not within the classroom location",
+          error: "You are not within the campus location",
         });
       }
     }

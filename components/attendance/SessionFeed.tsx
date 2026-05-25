@@ -7,14 +7,14 @@ import { KEYS, getAll } from "@/lib/storage";
 import { formatTime, getStatusColor } from "@/lib/utils";
 import type {
   AttendanceRecord,
-  ClassRoom,
+  Course,
   QRSession,
   Student,
 } from "@/types";
 
 interface SessionFeedProps {
   session: QRSession;
-  classRoom: ClassRoom;
+  course: Course;
   pollIntervalMs?: number;
   onSessionUpdate?: (session: QRSession) => void;
 }
@@ -30,7 +30,7 @@ function getInitials(name: string): string {
 
 export function SessionFeed({
   session,
-  classRoom,
+  course,
   pollIntervalMs = 5000,
   onSessionUpdate,
 }: SessionFeedProps) {
@@ -53,7 +53,7 @@ export function SessionFeed({
     const sessionRecords = attendance
       .filter(
         (r) =>
-          r.classId === live.classId &&
+          r.courseId === live.courseId &&
           r.subjectId === live.subjectId &&
           r.date === live.date &&
           live.markedStudentIds.includes(r.studentId)
@@ -71,7 +71,7 @@ export function SessionFeed({
       };
     });
 
-    const pendingStudents = classRoom.studentIds
+    const pendingStudents = course.studentIds
       .filter((id) => !live.markedStudentIds.includes(id))
       .map((id) => studentMap.get(id))
       .filter((s): s is Student => !!s);
@@ -80,9 +80,9 @@ export function SessionFeed({
       liveSession: live,
       markedEntries,
       pendingStudents,
-      total: classRoom.studentIds.length,
+      total: course.studentIds.length,
     };
-  }, [session, classRoom, tick]);
+  }, [session, course, tick]);
 
   const sessionSyncKey = `${liveSession.id}:${liveSession.markedStudentIds.join(",")}:${liveSession.currentNonce}`;
 
@@ -135,7 +135,9 @@ export function SessionFeed({
                 <p className="truncate text-sm font-medium text-white">
                   {student?.name ?? "Unknown"}
                 </p>
-                <p className="text-xs text-slate-500">{student?.rollNo}</p>
+                <p className="text-xs text-slate-500">
+                  {student?.enrollmentNo}
+                </p>
               </div>
               <span
                 className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium capitalize ${getStatusColor(record.status)}`}
@@ -177,7 +179,7 @@ export function SessionFeed({
                 className="flex items-center justify-between rounded-lg px-2 py-1.5 text-xs text-slate-400 hover:bg-white/5"
               >
                 <span>{s.name}</span>
-                <span>{s.rollNo}</span>
+                <span className="font-mono">{s.enrollmentNo}</span>
               </li>
             ))}
             {pendingStudents.length === 0 && (

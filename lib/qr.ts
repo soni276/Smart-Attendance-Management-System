@@ -34,9 +34,9 @@ export function createQRPayload(session: QRSession): QRPayload {
 
   const unsigned: Omit<QRPayload, "signature"> = {
     sessionId: session.id,
-    classId: session.classId,
+    courseId: session.courseId,
     subjectId: session.subjectId,
-    teacherId: session.teacherId,
+    facultyId: session.facultyId,
     windowSlot: session.windowSlot,
     issuedAt,
     expiresAt,
@@ -74,7 +74,7 @@ export function validateQRPayload(payload: QRPayload): {
   }
 
   if (!session.isActive) {
-    return { valid: false, error: "Session has been closed by teacher" };
+    return { valid: false, error: "Session has been closed by faculty" };
   }
 
   if (payload.nonce !== session.currentNonce) {

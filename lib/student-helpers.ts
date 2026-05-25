@@ -1,4 +1,4 @@
-import type { AttendanceRecord, ClassRoom, Student } from "@/types";
+import type { AttendanceRecord, Course, Student } from "@/types";
 import { calculateAttendancePercent } from "@/lib/utils";
 
 export function getStudentAttendancePercent(
@@ -23,11 +23,20 @@ export function getInitials(name: string): string {
     .toUpperCase();
 }
 
-export function classDisplayName(
-  classId: string,
-  classes: ClassRoom[]
+export function courseDisplayName(
+  courseId: string,
+  courses: Course[]
 ): string {
-  return classes.find((c) => c.id === classId)?.name ?? "—";
+  const c = courses.find((x) => x.id === courseId);
+  if (!c) return "—";
+  return `${c.courseCode} · ${c.courseName}`;
+}
+
+export function getStudentCourses(
+  student: Student,
+  courses: Course[]
+): Course[] {
+  return courses.filter((c) => student.courseIds.includes(c.id));
 }
 
 export function slugSubjectId(name: string): string {

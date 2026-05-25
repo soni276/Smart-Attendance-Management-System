@@ -6,8 +6,8 @@ function dashboardForRole(role: SessionUser["role"]): string {
   switch (role) {
     case "admin":
       return "/admin";
-    case "teacher":
-      return "/teacher";
+    case "faculty":
+      return "/faculty";
     case "student":
       return "/student";
     default:

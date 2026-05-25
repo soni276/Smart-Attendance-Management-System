@@ -20,10 +20,10 @@ import {
 } from "@/lib/utils";
 import type {
   AttendanceRecord,
-  ClassRoom,
+  Course,
+  Faculty,
   ScheduleSlot,
   Student,
-  Teacher,
 } from "@/types";
 
 const WEEKDAYS: ScheduleSlot["day"][] = [
@@ -79,8 +79,8 @@ function getInitials(name: string): string {
     .toUpperCase();
 }
 
-interface ClassDetail {
-  classroom: ClassRoom;
+interface CourseDetail {
+  course: Course;
   studentCount: number;
   avgPercent: number;
   mySubjects: string[];
@@ -91,7 +91,7 @@ interface ClassDetail {
   }[];
 }
 
-export default function TeacherMyClassesPage() {
+export default function FacultyMyCoursesPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState<Record<string, string>>({});
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -99,30 +99,32 @@ export default function TeacherMyClassesPage() {
   const data = useMemo(() => {
     if (typeof window === "undefined") return null;
     const user = getCurrentUser();
-    if (!user || user.role !== "teacher") return null;
+    if (!user || user.role !== "faculty") return null;
 
-    const teachers = getAll<Teacher>(KEYS.TEACHERS);
-    const teacher =
-      teachers.find((t) => t.id === user.userId) ??
-      teachers.find((t) => t.email === user.email);
-    if (!teacher) return null;
+    const allFaculty = getAll<Faculty>(KEYS.FACULTY);
+    const faculty =
+      allFaculty.find((f) => f.id === user.userId) ??
+      allFaculty.find((f) => f.email === user.email);
+    if (!faculty) return null;
 
-    const classes = getAll<ClassRoom>(KEYS.CLASSES);
+    const courses = getAll<Course>(KEYS.COURSES);
     const allStudents = getAll<Student>(KEYS.STUDENTS);
     const allRecords = getAll<AttendanceRecord>(KEYS.ATTENDANCE);
     const settings = getSettings();
 
-    const myClasses = classes.filter((c) => teacher.classIds.includes(c.id));
+    const myCourses = courses.filter(
+      (c) => faculty.courseIds.includes(c.id) || c.facultyId === faculty.id
+    );
     const studentMap = new Map(allStudents.map((s) => [s.id, s]));
 
-    const details: ClassDetail[] = myClasses.map((cls) => {
-      const classRecs = allRecords.filter((r) => r.classId === cls.id);
-      const studentRows = cls.studentIds
+    const details: CourseDetail[] = myCourses.map((course) => {
+      const courseRecs = allRecords.filter((r) => r.courseId === course.id);
+      const studentRows = course.studentIds
         .map((id) => studentMap.get(id))
         .filter((s): s is Student => !!s)
         .map((s) => ({
           student: s,
-          percent: calculateAttendancePercent(classRecs, s.id),
+          percent: calculateAttendancePercent(courseRecs, s.id),
         }))
         .sort((a, b) => b.percent - a.percent);
 
@@ -135,28 +137,23 @@ export default function TeacherMyClassesPage() {
             );
 
       const mySubjects = Array.from(
-        new Set(
-          cls.schedule
-            .filter((slot) =>
-              teacher.subjects.some((sub) =>
-                slot.subject.toLowerCase().includes(sub.toLowerCase())
-              )
-            )
-            .map((s) => s.subject)
-        )
+        new Set(course.schedule.map((s) => s.subject))
       );
 
       return {
-        classroom: cls,
-        studentCount: cls.studentIds.length,
+        course,
+        studentCount: course.studentIds.length,
         avgPercent: avg,
-        mySubjects: mySubjects.length > 0 ? mySubjects : teacher.subjects,
-        nextSlot: nextSlotLabel(cls.schedule),
+        mySubjects:
+          mySubjects.length > 0
+            ? mySubjects
+            : faculty.specialisation,
+        nextSlot: nextSlotLabel(course.schedule),
         students: studentRows,
       };
     });
 
-    return { teacher, details, settings };
+    return { faculty, details, settings };
   }, []);
 
   useEffect(() => {
@@ -180,8 +177,8 @@ export default function TeacherMyClassesPage() {
     return (
       <EmptyState
         icon={Users}
-        title="Sign in as teacher"
-        description="Please log in with a teacher account to manage classes."
+        title="Sign in as faculty"
+        description="Please log in with a faculty account to manage courses."
       />
     );
   }
@@ -190,8 +187,8 @@ export default function TeacherMyClassesPage() {
     return (
       <EmptyState
         icon={BookOpen}
-        title="No classes assigned"
-        description="You haven't been assigned to any class yet. Ask an admin to assign you."
+        title="No courses assigned"
+        description="You haven't been assigned to any course yet. Ask an admin to assign you."
       />
     );
   }
@@ -207,29 +204,29 @@ export default function TeacherMyClassesPage() {
     >
       <div>
         <h2 className="font-display text-2xl font-semibold text-white">
-          My Classes
+          My Courses
         </h2>
         <p className="mt-1 text-sm text-slate-400">
           {data.details.length}{" "}
-          {data.details.length === 1 ? "class" : "classes"} assigned to you
+          {data.details.length === 1 ? "course" : "courses"} assigned to you
         </p>
       </div>
 
       <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
         {data.details.map((d, i) => {
-          const isOpen = expanded[d.classroom.id] ?? false;
-          const q = (search[d.classroom.id] ?? "").toLowerCase();
+          const isOpen = expanded[d.course.id] ?? false;
+          const q = (search[d.course.id] ?? "").toLowerCase();
           const visibleStudents = q
             ? d.students.filter(
                 (row) =>
                   row.student.name.toLowerCase().includes(q) ||
-                  row.student.rollNo.toLowerCase().includes(q)
+                  row.student.enrollmentNo.toLowerCase().includes(q)
               )
             : d.students;
 
           return (
             <motion.div
-              key={d.classroom.id}
+              key={d.course.id}
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.06 }}
@@ -237,11 +234,17 @@ export default function TeacherMyClassesPage() {
             >
               <div className="flex items-start justify-between">
                 <div className="min-w-0">
-                  <h3 className="font-display text-lg font-semibold text-white">
-                    {d.classroom.name}
+                  <p className="font-mono text-xs text-indigo-300">
+                    {d.course.courseCode} · {d.course.credits} credits
+                  </p>
+                  <h3 className="mt-0.5 font-display text-lg font-semibold text-white">
+                    {d.course.courseName}
                   </h3>
                   <p className="text-xs text-slate-400">
-                    Section {d.classroom.section} · {d.classroom.department}
+                    {d.course.department}
+                  </p>
+                  <p className="text-[11px] text-slate-500">
+                    {d.course.semester} Sem · Batch {d.course.batch}
                   </p>
                 </div>
                 <span
@@ -271,7 +274,7 @@ export default function TeacherMyClassesPage() {
                 <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-3">
                   <p className="flex items-center gap-1.5 text-xs text-slate-500">
                     <BookOpen className="h-3.5 w-3.5" />
-                    Subjects
+                    Topics
                   </p>
                   <p
                     className="mt-1 truncate text-sm font-medium text-white"
@@ -289,18 +292,18 @@ export default function TeacherMyClassesPage() {
 
               <div className="mt-4 flex gap-2">
                 <Link
-                  href={`/teacher/mark-attendance?classId=${d.classroom.id}`}
+                  href={`/faculty/mark-attendance?courseId=${d.course.id}`}
                   className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-indigo-600 to-purple-600 py-2 text-sm font-medium text-white hover:opacity-90"
                 >
                   <ClipboardCheck className="h-4 w-4" />
-                  Mark Attendance
+                  Take Attendance
                 </Link>
                 <button
                   type="button"
                   onClick={() =>
                     setExpanded((prev) => ({
                       ...prev,
-                      [d.classroom.id]: !isOpen,
+                      [d.course.id]: !isOpen,
                     }))
                   }
                   className="flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-2 text-sm text-slate-300 hover:bg-white/5"
@@ -328,14 +331,14 @@ export default function TeacherMyClassesPage() {
                       <div className="relative">
                         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
                         <input
-                          value={search[d.classroom.id] ?? ""}
+                          value={search[d.course.id] ?? ""}
                           onChange={(e) =>
                             setSearch((prev) => ({
                               ...prev,
-                              [d.classroom.id]: e.target.value,
+                              [d.course.id]: e.target.value,
                             }))
                           }
-                          placeholder="Search by name or roll…"
+                          placeholder="Search by name or enrollment no…"
                           className="w-full rounded-lg border border-white/10 bg-white/5 py-2 pl-9 pr-3 text-sm text-white placeholder:text-slate-500 focus:border-indigo-500/50 focus:outline-none"
                         />
                       </div>
@@ -357,8 +360,8 @@ export default function TeacherMyClassesPage() {
                                 <p className="truncate text-sm text-white">
                                   {row.student.name}
                                 </p>
-                                <p className="text-[11px] text-slate-500">
-                                  {row.student.rollNo}
+                                <p className="font-mono text-[11px] text-slate-500">
+                                  {row.student.enrollmentNo}
                                 </p>
                               </div>
                               <span
