@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from "next";
 
 export const metadata: Metadata = {
-  title: "Scan Attendance | Campus Attendance System",
+  title: "Mark Attendance | Campus Attendance System",
   description: "Mark your attendance by scanning the lecture QR code",
 };
 

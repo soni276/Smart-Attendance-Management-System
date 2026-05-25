@@ -1,0 +1,21 @@
+{
+  "headers": [
+    {
+      "source": "/scan(.*)",
+      "headers": [
+        { "key": "Permissions-Policy", "value": "camera=*, microphone=()" },
+        { "key": "Feature-Policy", "value": "camera *" }
+      ]
+    },
+    {
+      "source": "/models/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        },
+        { "key": "Access-Control-Allow-Origin", "value": "*" }
+      ]
+    }
+  ]
+}

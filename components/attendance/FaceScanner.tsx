@@ -116,17 +116,115 @@ export function FaceScanner({
 
   const startCamera = useCallback(async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 640, height: 480, facingMode: "user" },
-        audio: false,
-      });
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
+      // 1. Load face-api.js weights (idempotent — re-runs are cheap).
+      setStatus("loading-models");
+      setError("");
+      try {
+        await loadModels();
+      } catch (modelErr) {
+        console.error("[FaceScanner] model load failed:", modelErr);
+        setError(
+          "Failed to load face recognition models. Please check your connection and try again."
+        );
+        setStatus("failed");
+        return;
       }
-    } catch {
-      setError("Camera access denied. Please allow camera permissions.");
+      setStatus("ready");
+
+      // 2. Try a sequence of getUserMedia constraints. Mobile Safari is picky:
+      // `exact` fails on devices without a front camera, so we fall back.
+      let stream: MediaStream | null = null;
+      const attempts: MediaStreamConstraints[] = [
+        {
+          video: {
+            facingMode: { exact: "user" },
+            width: { ideal: 640 },
+            height: { ideal: 480 },
+          },
+          audio: false,
+        },
+        { video: { facingMode: "user" }, audio: false },
+        { video: true, audio: false },
+      ];
+
+      let lastErr: unknown = null;
+      for (const constraint of attempts) {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia(constraint);
+          break;
+        } catch (err) {
+          lastErr = err;
+        }
+      }
+
+      if (!stream) {
+        const e = lastErr as { name?: string; message?: string } | null;
+        if (e?.name === "NotAllowedError") {
+          setError(
+            "Camera permission denied. Please allow camera access in your browser settings and tap Try Again."
+          );
+        } else if (e?.name === "NotFoundError") {
+          setError("No camera found on this device.");
+        } else {
+          setError(
+            "Could not access camera. Please check permissions and try again."
+          );
+        }
+        setStatus("failed");
+        return;
+      }
+
+      streamRef.current = stream;
+
+      // 3. Wire stream to <video> and wait for it to actually start playing.
+      const video = videoRef.current;
+      if (!video) {
+        stream.getTracks().forEach((t) => t.stop());
+        setError("Video element not ready. Please retry.");
+        setStatus("failed");
+        return;
+      }
+
+      video.srcObject = stream;
+      video.playsInline = true;
+      video.muted = true;
+      video.setAttribute("playsinline", "true");
+      video.setAttribute("webkit-playsinline", "true");
+
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(
+          () => reject(new Error("Video load timeout")),
+          15000
+        );
+        const onReady = () => {
+          clearTimeout(timer);
+          video
+            .play()
+            .then(() => resolve())
+            .catch(reject);
+        };
+        if (video.readyState >= 1) {
+          onReady();
+        } else {
+          video.onloadedmetadata = onReady;
+        }
+      });
+
+      setStatus("scanning");
+    } catch (err) {
+      console.error("[FaceScanner] camera error:", err);
+      const e = err as { name?: string; message?: string };
+      if (e.name === "NotAllowedError") {
+        setError(
+          "Camera permission denied. Please allow camera access and try again."
+        );
+      } else if (e.name === "NotFoundError") {
+        setError("No camera found on this device.");
+      } else {
+        setError(
+          "Camera failed to start: " + (e.message || "Unknown error")
+        );
+      }
       setStatus("failed");
     }
   }, []);
@@ -235,31 +333,13 @@ export function FaceScanner({
     setStatus("liveness");
   }, []);
 
+  // Start the camera + load models on mount. The parent gates rendering of
+  // this component behind a user-gesture button (so autoplay restrictions on
+  // mobile Safari / Chrome don't block getUserMedia).
   useEffect(() => {
-    let cancelled = false;
-
-    (async () => {
-      setStatus("loading-models");
-      try {
-        await loadModels();
-        if (!cancelled) setStatus("ready");
-      } catch {
-        if (!cancelled) {
-          setError("Failed to load face recognition models.");
-          setStatus("failed");
-        }
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
+    startCamera();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  useEffect(() => {
-    if (status !== "ready") return;
-    startCamera().then(() => setStatus("scanning"));
-  }, [status, startCamera]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -416,10 +496,18 @@ export function FaceScanner({
         <div className="relative aspect-[4/3] w-full">
           <video
             ref={videoRef}
-            className="h-full w-full object-cover mirror"
+            className="h-full w-full"
             playsInline
             muted
-            style={{ transform: "scaleX(-1)" }}
+            autoPlay
+            controls={false}
+            disablePictureInPicture
+            style={{
+              width: "100%",
+              height: "100%",
+              objectFit: "cover",
+              transform: "scaleX(-1)",
+            }}
           />
           <canvas
             ref={canvasRef}
@@ -460,6 +548,40 @@ export function FaceScanner({
           >
             {statusBadge()}
           </div>
+
+          {status === "failed" && error && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/85 p-6 text-center backdrop-blur-sm">
+              <div className="mb-3 text-5xl">⚠️</div>
+              <p className="mb-2 font-display text-lg font-semibold text-red-300">
+                Camera Error
+              </p>
+              <p className="mb-5 max-w-xs text-sm text-slate-300">{error}</p>
+              <button
+                type="button"
+                onClick={() => {
+                  setError("");
+                  setDetectedName("");
+                  setConfidence(0);
+                  setMatchedStudent(null);
+                  verifyingRef.current = false;
+                  livenessCompleteRef.current = false;
+                  livenessStartedRef.current = false;
+                  setBlinkCount(0);
+                  setLivenessStep([]);
+                  setCurrentChallengeIndex(0);
+                  setStatus("idle");
+                  void startCamera();
+                }}
+                className="rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 px-6 py-3 font-semibold text-white shadow-lg shadow-indigo-500/30 active:scale-95"
+              >
+                Try Again
+              </button>
+              <p className="mt-4 max-w-xs text-[11px] text-slate-500">
+                Make sure you are using Chrome or Safari and camera permission
+                is allowed.
+              </p>
+            </div>
+          )}
 
           {(status === "matched" || status === "scanning") && confidence > 0 && (
             <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4">

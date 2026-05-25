@@ -265,6 +265,9 @@ function ScanPageContent() {
     latenessMinutes?: number;
   } | null>(null);
   const [confirmPending, setConfirmPending] = useState(!!studentIdParam);
+  // Mobile browsers block getUserMedia without a direct user gesture, so we
+  // gate the FaceScanner mount behind an explicit "Open Camera" tap.
+  const [cameraReady, setCameraReady] = useState(false);
 
   const qrPayload = useMemo(
     () => (qrString ? parseQrString(qrString) : null),
@@ -419,6 +422,7 @@ function ScanPageContent() {
       setSessionMeta(session);
 
       setFlow("qr-valid");
+      setCameraReady(false);
       setTimeout(() => setFlow("face-scanning"), 1500);
     } catch {
       setError("Network error. Check your connection and try again.");
@@ -702,7 +706,42 @@ function ScanPageContent() {
             </motion.div>
           )}
 
-          {flow === "face-scanning" && (
+          {flow === "face-scanning" && !cameraReady && (
+            <motion.div
+              key="face-prompt"
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex flex-1 flex-col items-center justify-center px-6 py-10 text-center"
+            >
+              <div className="mb-6 flex h-24 w-24 items-center justify-center rounded-full bg-indigo-500/20 ring-1 ring-indigo-500/40">
+                <span className="text-5xl" aria-hidden>
+                  📷
+                </span>
+              </div>
+              <h2 className="mb-3 font-display text-2xl font-bold text-white">
+                Face Verification
+              </h2>
+              <p className="mb-2 max-w-xs text-sm text-slate-400">
+                We need to verify your identity using your front camera.
+              </p>
+              <p className="mb-8 max-w-xs text-xs text-slate-500">
+                Please allow camera access when your browser asks. First load
+                may take 10–15 seconds.
+              </p>
+              <button
+                type="button"
+                onClick={() => setCameraReady(true)}
+                className="w-full max-w-xs rounded-2xl bg-gradient-to-r from-indigo-600 to-purple-600 py-4 font-display text-lg font-bold text-white shadow-lg shadow-indigo-500/30 transition-transform active:scale-95"
+              >
+                Open Camera
+              </button>
+              <p className="mt-5 max-w-xs text-[11px] text-slate-600">
+                Tip: use Chrome or Safari for the best experience.
+              </p>
+            </motion.div>
+          )}
+
+          {flow === "face-scanning" && cameraReady && (
             <motion.div
               key="face"
               initial={{ opacity: 0 }}
