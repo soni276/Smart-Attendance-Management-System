@@ -1,0 +1,242 @@
+@import "tailwindcss";
+
+:root,
+:root[data-theme="dark"] {
+  --background: #0a0a0f;
+  --foreground: #f8fafc;
+}
+
+:root[data-theme="light"] {
+  --background: #f5f7fb;
+  --foreground: #0a0a0f;
+  color-scheme: light;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-inter);
+  --font-display: var(--font-syne);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-inter), system-ui, sans-serif;
+}
+
+:root[data-theme="light"] body {
+  background: var(--background);
+  color: var(--foreground);
+}
+
+:root[data-theme="light"] body,
+:root[data-theme="light"] .text-white {
+  color: #0f172a;
+}
+
+:root[data-theme="light"] .bg-white\/\[0\.02\],
+:root[data-theme="light"] .bg-white\/\[0\.03\],
+:root[data-theme="light"] .bg-white\/\[0\.04\],
+:root[data-theme="light"] .bg-white\/5 {
+  background-color: #ffffff;
+  border-color: #e2e8f0;
+}
+
+:root[data-theme="light"] .border-white\/\[0\.06\],
+:root[data-theme="light"] .border-white\/\[0\.08\],
+:root[data-theme="light"] .border-white\/10 {
+  border-color: #e2e8f0;
+}
+
+:root[data-theme="light"] .text-slate-300,
+:root[data-theme="light"] .text-slate-400,
+:root[data-theme="light"] .text-slate-500 {
+  color: #475569;
+}
+
+.font-display {
+  font-family: var(--font-syne), var(--font-inter), system-ui, sans-serif;
+}
+
+@keyframes float-orb {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  33% {
+    transform: translate(30px, -40px) scale(1.05);
+  }
+  66% {
+    transform: translate(-20px, 20px) scale(0.95);
+  }
+}
+
+@keyframes float-orb-slow {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(-40px, -30px) scale(1.08);
+  }
+}
+
+@keyframes float-orb-fast {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  25% {
+    transform: translate(20px, 30px) scale(0.92);
+  }
+  75% {
+    transform: translate(-30px, -20px) scale(1.06);
+  }
+}
+
+.animate-float-orb {
+  animation: float-orb 12s ease-in-out infinite;
+}
+
+.animate-float-orb-slow {
+  animation: float-orb-slow 18s ease-in-out infinite;
+}
+
+.animate-float-orb-fast {
+  animation: float-orb-fast 8s ease-in-out infinite;
+}
+
+@keyframes scan-ring-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-scan-ring {
+  animation: scan-ring-spin 8s linear infinite;
+}
+
+@keyframes confetti-fall {
+  0% {
+    transform: translateY(-10vh) rotate(0deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(110vh) rotate(720deg);
+    opacity: 0.6;
+  }
+}
+
+.confetti-piece {
+  position: fixed;
+  top: 0;
+  width: 10px;
+  height: 10px;
+  animation: confetti-fall linear forwards;
+  pointer-events: none;
+  z-index: 50;
+}
+
+@keyframes radar-pulse {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(1.4);
+    opacity: 0;
+  }
+}
+
+.animate-radar-pulse {
+  animation: radar-pulse 2s ease-out infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.shimmer {
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-ring {
+  0% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  100% {
+    transform: scale(1.4);
+    opacity: 0;
+  }
+}
+
+@media print {
+  html,
+  body {
+    background: #ffffff !important;
+    color: #0f172a !important;
+  }
+  aside,
+  nav,
+  header,
+  .print\:hidden,
+  [data-print-hide] {
+    display: none !important;
+  }
+  table {
+    page-break-inside: auto;
+    border-collapse: collapse;
+    width: 100%;
+  }
+  thead {
+    display: table-header-group;
+  }
+  tr {
+    page-break-inside: avoid;
+    page-break-after: auto;
+  }
+  th,
+  td {
+    color: #0f172a !important;
+    border-bottom: 1px solid #cbd5e1 !important;
+    padding: 6px 8px !important;
+  }
+  h1,
+  h2,
+  h3,
+  h4 {
+    color: #0f172a !important;
+    page-break-after: avoid;
+  }
+  .border,
+  [class*="border-white"] {
+    border-color: #cbd5e1 !important;
+  }
+  [class*="bg-white"],
+  [class*="bg-slate"],
+  [class*="bg-indigo"],
+  [class*="bg-purple"],
+  [class*="bg-cyan"] {
+    background: #ffffff !important;
+  }
+  .text-slate-300,
+  .text-slate-400,
+  .text-slate-500,
+  .text-white {
+    color: #0f172a !important;
+  }
+  main {
+    margin-left: 0 !important;
+    padding: 0 !important;
+  }
+  @page {
+    margin: 1.5cm;
+  }
+}
