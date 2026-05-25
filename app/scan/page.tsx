@@ -66,15 +66,62 @@ const CONFETTI_COLORS = [
   "#a855f7",
 ];
 
-function parseQrString(raw: string): QRPayload | null {
+function base64urlToString(b64url: string): string | null {
   try {
-    return JSON.parse(decodeURIComponent(raw)) as QRPayload;
+    const padded =
+      b64url.replace(/-/g, "+").replace(/_/g, "/") +
+      "=".repeat((4 - (b64url.length % 4)) % 4);
+    if (typeof atob === "function") return atob(padded);
+    return null;
   } catch {
+    return null;
+  }
+}
+
+function parseQrString(raw: string): QRPayload | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+
+  // 1. Already raw JSON
+  if (trimmed.startsWith("{")) {
     try {
-      return JSON.parse(raw) as QRPayload;
+      return JSON.parse(trimmed) as QRPayload;
+    } catch {
+      // fall through
+    }
+  }
+
+  // 2. Full URL with ?data=<base64url>
+  try {
+    const url = new URL(trimmed);
+    const data = url.searchParams.get("data");
+    if (data) {
+      const json = base64urlToString(data);
+      if (json) return JSON.parse(json) as QRPayload;
+    }
+    const legacy = url.searchParams.get("qr");
+    if (legacy) {
+      return JSON.parse(decodeURIComponent(legacy)) as QRPayload;
+    }
+  } catch {
+    // not a URL — fall through
+  }
+
+  // 3. Bare base64url payload
+  const json = base64urlToString(trimmed);
+  if (json && json.trim().startsWith("{")) {
+    try {
+      return JSON.parse(json) as QRPayload;
     } catch {
       return null;
     }
+  }
+
+  // 4. Legacy: URL-encoded JSON
+  try {
+    return JSON.parse(decodeURIComponent(trimmed)) as QRPayload;
+  } catch {
+    return null;
   }
 }
 
@@ -241,8 +288,26 @@ function GeoFenceVisual({
 
 function ScanPageContent() {
   const searchParams = useSearchParams();
-  const qrParam = searchParams.get("qr") ?? "";
+  // Support both the new `?data=<base64url>` URL format (preferred — what the
+  // QR code itself encodes now) and the legacy `?qr=<json>` query param.
+  const dataParam = searchParams.get("data") ?? "";
+  const legacyQrParam = searchParams.get("qr") ?? "";
   const studentIdParam = searchParams.get("studentId") ?? "";
+
+  const qrParam = useMemo(() => {
+    if (dataParam) {
+      const json = base64urlToString(dataParam);
+      if (json) return json;
+    }
+    if (legacyQrParam) {
+      try {
+        return decodeURIComponent(legacyQrParam);
+      } catch {
+        return legacyQrParam;
+      }
+    }
+    return "";
+  }, [dataParam, legacyQrParam]);
 
   const settings = getSettings();
   const geoEnabled = settings.geoFencingEnabled;
@@ -682,10 +747,11 @@ function ScanPageContent() {
                 </>
               ) : (
                 <>
-                  <Loader2 className="h-14 w-14 animate-spin text-indigo-400" />
-                  <p className="mt-6 text-lg font-medium text-white">
-                    Validating QR Code…
-                  </p>
+                  <div className="h-16 w-16 animate-spin rounded-full border-4 border-indigo-500 border-t-transparent" />
+                  <h2 className="mt-6 font-display text-xl font-bold text-white">
+                    Verifying QR Code…
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-400">Please wait</p>
                 </>
               )}
             </motion.div>

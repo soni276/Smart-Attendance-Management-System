@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
-import { createQRPayload, qrPayloadToString } from "@/lib/qr";
+import {
+  createQRPayload,
+  qrPayloadToUrl,
+  resolveAppUrl,
+} from "@/lib/qr";
 import { parseApiBody, prepareStore } from "@/lib/api-utils";
 import { KEYS, getById, save } from "@/lib/storage-server";
 import type { QRSession } from "@/types";
@@ -40,9 +44,10 @@ export async function POST(request: Request) {
       lastRotatedAt: new Date().toISOString(),
     });
 
+    const appUrl = resolveAppUrl(request);
     return NextResponse.json({
       qrPayload,
-      qrString: qrPayloadToString(qrPayload),
+      qrString: qrPayloadToUrl(qrPayload, appUrl),
       session: updated,
     });
   } catch (error) {

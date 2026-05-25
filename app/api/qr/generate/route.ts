@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
-import { createQRPayload, qrPayloadToString } from "@/lib/qr";
+import {
+  createQRPayload,
+  qrPayloadToUrl,
+  resolveAppUrl,
+} from "@/lib/qr";
 import { parseApiBody, prepareStore } from "@/lib/api-utils";
 import { KEYS, getAll, getSettings, save } from "@/lib/storage-server";
 import { generateId, getTodayString, getWindowSlot } from "@/lib/utils";
@@ -79,6 +83,8 @@ export async function POST(request: Request) {
         s.windowSlot === windowSlot
     );
 
+    const appUrl = resolveAppUrl(request);
+
     if (existing) {
       const qrPayload = createQRPayload(existing);
       const updated = save(KEYS.QR_SESSIONS, {
@@ -90,7 +96,7 @@ export async function POST(request: Request) {
       return NextResponse.json({
         session: updated,
         qrPayload,
-        qrString: qrPayloadToString(qrPayload),
+        qrString: qrPayloadToUrl(qrPayload, appUrl),
       });
     }
 
@@ -130,7 +136,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       session: saved,
       qrPayload,
-      qrString: qrPayloadToString(qrPayload),
+      qrString: qrPayloadToUrl(qrPayload, appUrl),
     });
   } catch (error) {
     console.error("[qr/generate]", error);

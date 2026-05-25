@@ -133,6 +133,12 @@ export function QRDisplay({
         <p className="mt-4 text-center text-xs text-slate-500">
           QR refreshes every {expirySeconds} seconds
         </p>
+
+        {process.env.NODE_ENV === "development" && qrString && (
+          <p className="mt-3 max-w-[240px] break-all text-center font-mono text-[10px] text-slate-600">
+            {qrString.length > 80 ? `${qrString.slice(0, 80)}…` : qrString}
+          </p>
+        )}
       </div>
 
       {(courseLabel || subjectLabel || dateLabel || timeLabel) && (

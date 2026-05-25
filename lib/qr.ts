@@ -88,10 +88,98 @@ export function qrPayloadToString(payload: QRPayload): string {
   return JSON.stringify(payload);
 }
 
-export function stringToQRPayload(str: string): QRPayload | null {
-  try {
-    return JSON.parse(str) as QRPayload;
-  } catch {
-    return null;
+/** RFC 4648 base64url encode (no padding, URL-safe). */
+function base64urlEncode(input: string): string {
+  return Buffer.from(input, "utf-8")
+    .toString("base64")
+    .replace(/=+$/g, "")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_");
+}
+
+/** RFC 4648 base64url decode. */
+function base64urlDecode(input: string): string {
+  const padded =
+    input.replace(/-/g, "+").replace(/_/g, "/") +
+    "=".repeat((4 - (input.length % 4)) % 4);
+  return Buffer.from(padded, "base64").toString("utf-8");
+}
+
+/**
+ * Resolve the canonical public origin for QR URLs.
+ * Priority:
+ *   1. NEXT_PUBLIC_APP_URL  (set explicitly in env)
+ *   2. VERCEL_URL           (automatic per-deployment on Vercel)
+ *   3. request URL origin   (fallback when called from an API route)
+ */
+export function resolveAppUrl(request?: Request): string {
+  const explicit = process.env.NEXT_PUBLIC_APP_URL?.trim();
+  if (explicit) return explicit.replace(/\/+$/, "");
+
+  const vercel = process.env.VERCEL_URL?.trim();
+  if (vercel) {
+    return vercel.startsWith("http") ? vercel : `https://${vercel}`;
   }
+
+  if (request) {
+    try {
+      const u = new URL(request.url);
+      return `${u.protocol}//${u.host}`;
+    } catch {
+      // ignore
+    }
+  }
+  return "";
+}
+
+/**
+ * Build a scannable QR URL like
+ * `https://example.com/scan?data=<base64url(JSON.stringify(payload))>`.
+ * Camera apps recognise this as a URL and open the scan page directly.
+ */
+export function qrPayloadToUrl(payload: QRPayload, appUrl: string): string {
+  const base = (appUrl || "").replace(/\/+$/, "");
+  const data = base64urlEncode(JSON.stringify(payload));
+  return base ? `${base}/scan?data=${data}` : `/scan?data=${data}`;
+}
+
+/**
+ * Accept any of these formats and return the parsed payload:
+ *   - raw JSON                       (legacy QR contents)
+ *   - https://host/scan?data=<b64u>  (new URL format)
+ *   - just the base64url string      (data param value)
+ */
+export function stringToQRPayload(str: string): QRPayload | null {
+  if (!str) return null;
+  const trimmed = str.trim();
+
+  if (trimmed.startsWith("{")) {
+    try {
+      return JSON.parse(trimmed) as QRPayload;
+    } catch {
+      // fall through
+    }
+  }
+
+  try {
+    const url = new URL(trimmed);
+    const data = url.searchParams.get("data");
+    if (data) {
+      const json = base64urlDecode(data);
+      return JSON.parse(json) as QRPayload;
+    }
+  } catch {
+    // not a URL — fall through
+  }
+
+  try {
+    const json = base64urlDecode(trimmed);
+    if (json.trim().startsWith("{")) {
+      return JSON.parse(json) as QRPayload;
+    }
+  } catch {
+    // fall through
+  }
+
+  return null;
 }
