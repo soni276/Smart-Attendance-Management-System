@@ -189,19 +189,31 @@ export async function POST(request: Request) {
     const model = settings.openaiModel ?? "gpt-4o-mini";
     const openai = new OpenAI({ apiKey });
 
-    const history = (body.conversationHistory ?? [])
-      .slice(-20)
-      .map((m) => ({
-        role: m.role as "user" | "assistant",
-        content: m.content,
-      }));
+    const userMessage = body.message.trim();
+    const rawHistory = (body.conversationHistory ?? []).filter(
+      (m) => typeof m?.content === "string" && m.content.trim().length > 0
+    );
+
+    // Drop the most recent user message if it duplicates the current one
+    // (the client sends conversationHistory with the new user msg already appended).
+    const trimmedHistory =
+      rawHistory.length > 0 &&
+      rawHistory[rawHistory.length - 1].role === "user" &&
+      rawHistory[rawHistory.length - 1].content.trim() === userMessage
+        ? rawHistory.slice(0, -1)
+        : rawHistory;
+
+    const history = trimmedHistory.slice(-20).map((m) => ({
+      role: m.role as "user" | "assistant",
+      content: m.content,
+    }));
 
     const stream = openai.responses.stream({
       model,
       input: [
         { role: "system", content: systemPrompt },
         ...history,
-        { role: "user", content: body.message.trim() },
+        { role: "user", content: userMessage },
       ],
     });
 

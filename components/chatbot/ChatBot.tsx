@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Bot, Minus, Send, Trash2, X } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { buildClientStoreSnapshot } from "@/lib/client-store";
 import {
   getChatHistory,
@@ -26,39 +28,21 @@ function formatTime(ts: string): string {
   });
 }
 
-function renderMarkdown(text: string): React.ReactNode {
-  const lines = text.split("\n");
-  return lines.map((line, i) => {
-    let content = line;
-    content = content.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
-    content = content.replace(/\*(.+?)\*/g, "<em>$1</em>");
-    if (line.startsWith("|") && line.includes("|")) {
-      const cells = line
-        .split("|")
-        .filter((c) => c.trim())
-        .map((c) => c.trim());
-      if (cells.every((c) => /^[-:]+$/.test(c))) return null;
-      return (
-        <tr key={i} className="border-b border-white/5">
-          {cells.map((cell, j) => (
-            <td key={j} className="px-2 py-1 text-xs" dangerouslySetInnerHTML={{ __html: cell.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>") }} />
-          ))}
-        </tr>
-      );
-    }
-    if (line.startsWith("- ")) {
-      return (
-        <li key={i} className="ml-4 list-disc text-sm" dangerouslySetInnerHTML={{ __html: content.slice(2) }} />
-      );
-    }
-    return (
-      <p
-        key={i}
-        className="text-sm leading-relaxed"
-        dangerouslySetInnerHTML={{ __html: content || "&nbsp;" }}
-      />
-    );
-  });
+function MarkdownContent({ text }: { text: string }) {
+  return (
+    <div className="space-y-2 text-sm leading-relaxed [&_a]:text-indigo-300 [&_a]:underline [&_code]:rounded [&_code]:bg-white/10 [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-[12px] [&_h1]:font-display [&_h1]:text-base [&_h1]:font-semibold [&_h1]:text-white [&_h2]:font-display [&_h2]:text-sm [&_h2]:font-semibold [&_h2]:text-white [&_h3]:font-display [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:text-white [&_li]:ml-4 [&_li]:list-disc [&_ol_li]:list-decimal [&_p]:text-sm [&_p]:leading-relaxed [&_strong]:font-semibold [&_strong]:text-white [&_table]:my-2 [&_table]:w-full [&_table]:border-collapse [&_table]:overflow-hidden [&_table]:rounded-md [&_td]:border [&_td]:border-white/10 [&_td]:px-2 [&_td]:py-1 [&_td]:text-[12px] [&_th]:border [&_th]:border-white/10 [&_th]:bg-white/10 [&_th]:px-2 [&_th]:py-1 [&_th]:text-left [&_th]:text-[11px] [&_th]:font-semibold [&_th]:text-white">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          a: ({ ...props }) => (
+            <a {...props} target="_blank" rel="noopener noreferrer" />
+          ),
+        }}
+      >
+        {text}
+      </ReactMarkdown>
+    </div>
+  );
 }
 
 export function ChatBot() {
@@ -125,12 +109,18 @@ export function ChatBot() {
         });
 
         if (!res.ok) {
-          const err = (await res.json()) as { error?: string };
-          throw new Error(err.error ?? "Chat failed");
+          let errMsg = `Chat failed (${res.status})`;
+          try {
+            const err = (await res.json()) as { error?: string };
+            if (err.error) errMsg = err.error;
+          } catch {
+            // response wasn't JSON
+          }
+          throw new Error(errMsg);
         }
 
         const reader = res.body?.getReader();
-        if (!reader) throw new Error("No stream");
+        if (!reader) throw new Error("No stream available");
 
         const decoder = new TextDecoder();
         let accumulated = "";
@@ -143,6 +133,12 @@ export function ChatBot() {
             prev.map((m) =>
               m.id === assistantId ? { ...m, content: accumulated } : m
             )
+          );
+        }
+
+        if (!accumulated.trim()) {
+          throw new Error(
+            "Empty response from AI. Please check your OpenAI API key in Settings."
           );
         }
 
@@ -277,19 +273,20 @@ export function ChatBot() {
                       )}
                     >
                       {msg.role === "assistant" ? (
-                        <div className="prose-invert">
-                          {msg.content ? (
-                            <>
-                              {renderMarkdown(msg.content)}
-                              {isStreaming &&
-                                msg.id === messages[messages.length - 1]?.id && (
-                                  <span className="ml-0.5 inline-block h-4 w-0.5 animate-pulse bg-indigo-400" />
-                                )}
-                            </>
-                          ) : null}
-                        </div>
+                        msg.content ? (
+                          <div className="relative">
+                            <MarkdownContent text={msg.content} />
+                            {isStreaming &&
+                              msg.id ===
+                                messages[messages.length - 1]?.id && (
+                                <span className="ml-0.5 inline-block h-4 w-0.5 animate-pulse bg-indigo-400" />
+                              )}
+                          </div>
+                        ) : null
                       ) : (
-                        <p className="text-sm">{msg.content}</p>
+                        <p className="whitespace-pre-wrap text-sm">
+                          {msg.content}
+                        </p>
                       )}
                       <p className="mt-1 text-[10px] opacity-60">
                         {formatTime(msg.timestamp)}
