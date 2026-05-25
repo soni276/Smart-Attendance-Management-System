@@ -34,21 +34,48 @@ const DEFAULT_SETTINGS: AppSettings = {
   openaiModel: "gpt-4o-mini",
 };
 
+// On serverless / read-only filesystems (Vercel, Netlify, etc.) we cannot write
+// to disk. Fall back to a module-level in-memory cache that is populated each
+// request via `syncFromClientStore` from the client's localStorage snapshot.
+let memoryStore: Record<string, string> = {};
+let useMemoryStore = false;
+
 function readServerFile(): Record<string, string> {
+  if (useMemoryStore) return { ...memoryStore };
   try {
-    if (!fs.existsSync(SERVER_STORE_PATH)) return {};
-    return JSON.parse(fs.readFileSync(SERVER_STORE_PATH, "utf-8")) as Record<
-      string,
-      string
-    >;
+    if (!fs.existsSync(SERVER_STORE_PATH)) return { ...memoryStore };
+    const fileData = JSON.parse(
+      fs.readFileSync(SERVER_STORE_PATH, "utf-8")
+    ) as Record<string, string>;
+    return { ...memoryStore, ...fileData };
   } catch {
-    return {};
+    return { ...memoryStore };
   }
 }
 
 function writeServerFile(store: Record<string, string>): void {
-  fs.mkdirSync(path.dirname(SERVER_STORE_PATH), { recursive: true });
-  fs.writeFileSync(SERVER_STORE_PATH, JSON.stringify(store, null, 2), "utf-8");
+  if (useMemoryStore) {
+    memoryStore = { ...store };
+    return;
+  }
+  try {
+    fs.mkdirSync(path.dirname(SERVER_STORE_PATH), { recursive: true });
+    fs.writeFileSync(
+      SERVER_STORE_PATH,
+      JSON.stringify(store, null, 2),
+      "utf-8"
+    );
+  } catch (err) {
+    // Read-only filesystem (e.g. Vercel /var/task). Switch to in-memory store.
+    if (typeof console !== "undefined") {
+      console.warn(
+        "[storage-server] disk write failed, falling back to in-memory store:",
+        err instanceof Error ? err.message : err
+      );
+    }
+    useMemoryStore = true;
+    memoryStore = { ...store };
+  }
 }
 
 function readRaw(key: string): string | null {

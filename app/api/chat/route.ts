@@ -160,8 +160,11 @@ export async function POST(request: Request) {
     const apiKey = resolveApiKey(settings);
     if (!apiKey) {
       return new Response(
-        JSON.stringify({ error: "OpenAI API key not configured" }),
-        { status: 500, headers: { "Content-Type": "application/json" } }
+        JSON.stringify({
+          error:
+            "OpenAI API key not configured. Set OPENAI_API_KEY in your Vercel environment variables (Project → Settings → Environment Variables) or paste a key in Admin → Settings → AI.",
+        }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
       );
     }
 
@@ -253,8 +256,25 @@ export async function POST(request: Request) {
     });
   } catch (err) {
     console.error("Chat API error:", err);
-    return new Response(JSON.stringify({ error: "Chat failed" }), {
-      status: 500,
+    const errAny = err as { message?: string; status?: number; code?: string };
+    let message = errAny.message || "Chat failed";
+    const status = typeof errAny.status === "number" ? errAny.status : 500;
+
+    // Surface helpful messages for common OpenAI / config errors
+    if (errAny.code === "invalid_api_key" || /invalid.*api.*key/i.test(message)) {
+      message =
+        "OpenAI API key is invalid or missing. Set OPENAI_API_KEY in your environment (or admin Settings → AI).";
+    } else if (errAny.code === "insufficient_quota" || /quota/i.test(message)) {
+      message =
+        "OpenAI quota exceeded. Please add credits to your OpenAI account or use a different API key.";
+    } else if (/rate.?limit/i.test(message)) {
+      message = "Too many requests. Please wait a moment and try again.";
+    } else if (status >= 500 && status < 600) {
+      message = `AI service error: ${message}`;
+    }
+
+    return new Response(JSON.stringify({ error: message }), {
+      status,
       headers: { "Content-Type": "application/json" },
     });
   }
