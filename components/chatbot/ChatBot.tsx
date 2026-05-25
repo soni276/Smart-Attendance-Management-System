@@ -1,15 +1,21 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Component, useCallback, useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Bot, Minus, Send, Trash2, X } from "lucide-react";
+import {
+  AlertCircle,
+  Bot,
+  Minus,
+  RefreshCw,
+  Send,
+  Trash2,
+  X,
+} from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { buildClientStoreSnapshot } from "@/lib/client-store";
-import {
-  getChatHistory,
-  saveChatHistory,
-} from "@/lib/storage";
+import { getChatHistory, saveChatHistory } from "@/lib/storage";
 import { cn, generateId } from "@/lib/utils";
 import { toastError } from "@/lib/toast-helpers";
 import type { ChatMessage } from "@/types";
@@ -21,6 +27,10 @@ const QUICK_ACTIONS = [
   "Today's summary",
 ];
 
+interface ChatMessageWithError extends ChatMessage {
+  error?: string;
+}
+
 function formatTime(ts: string): string {
   return new Date(ts).toLocaleTimeString("en-US", {
     hour: "2-digit",
@@ -28,19 +38,45 @@ function formatTime(ts: string): string {
   });
 }
 
+// Error boundary so a bad markdown chunk during streaming doesn't kill the chatbot.
+class MarkdownBoundary extends Component<
+  { children: ReactNode; fallback: ReactNode },
+  { hasError: boolean }
+> {
+  state = { hasError: false };
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+  componentDidCatch(err: unknown) {
+    if (typeof console !== "undefined") {
+      console.warn("[CampusBot] markdown render fallback:", err);
+    }
+  }
+  render() {
+    if (this.state.hasError) return this.props.fallback;
+    return this.props.children;
+  }
+}
+
 function MarkdownContent({ text }: { text: string }) {
   return (
     <div className="space-y-2 text-sm leading-relaxed [&_a]:text-indigo-300 [&_a]:underline [&_code]:rounded [&_code]:bg-white/10 [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-[12px] [&_h1]:font-display [&_h1]:text-base [&_h1]:font-semibold [&_h1]:text-white [&_h2]:font-display [&_h2]:text-sm [&_h2]:font-semibold [&_h2]:text-white [&_h3]:font-display [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:text-white [&_li]:ml-4 [&_li]:list-disc [&_ol_li]:list-decimal [&_p]:text-sm [&_p]:leading-relaxed [&_strong]:font-semibold [&_strong]:text-white [&_table]:my-2 [&_table]:w-full [&_table]:border-collapse [&_table]:overflow-hidden [&_table]:rounded-md [&_td]:border [&_td]:border-white/10 [&_td]:px-2 [&_td]:py-1 [&_td]:text-[12px] [&_th]:border [&_th]:border-white/10 [&_th]:bg-white/10 [&_th]:px-2 [&_th]:py-1 [&_th]:text-left [&_th]:text-[11px] [&_th]:font-semibold [&_th]:text-white">
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        components={{
-          a: ({ ...props }) => (
-            <a {...props} target="_blank" rel="noopener noreferrer" />
-          ),
-        }}
+      <MarkdownBoundary
+        fallback={
+          <p className="whitespace-pre-wrap text-sm text-slate-200">{text}</p>
+        }
       >
-        {text}
-      </ReactMarkdown>
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          components={{
+            a: ({ ...props }) => (
+              <a {...props} target="_blank" rel="noopener noreferrer" />
+            ),
+          }}
+        >
+          {text}
+        </ReactMarkdown>
+      </MarkdownBoundary>
     </div>
   );
 }
@@ -48,13 +84,14 @@ function MarkdownContent({ text }: { text: string }) {
 export function ChatBot() {
   const [open, setOpen] = useState(false);
   const [minimized, setMinimized] = useState(false);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<ChatMessageWithError[]>([]);
   const [inputText, setInputText] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [hasUnread, setHasUnread] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     setMessages(getChatHistory());
@@ -62,7 +99,16 @@ export function ChatBot() {
   }, []);
 
   useEffect(() => {
-    if (hydrated) saveChatHistory(messages);
+    if (hydrated) {
+      // strip transient error field before persisting
+      const clean: ChatMessage[] = messages.map((m) => ({
+        id: m.id,
+        role: m.role,
+        content: m.content,
+        timestamp: m.timestamp,
+      }));
+      saveChatHistory(clean);
+    }
   }, [messages, hydrated]);
 
   useEffect(() => {
@@ -72,29 +118,15 @@ export function ChatBot() {
     });
   }, [messages, isStreaming]);
 
-  const sendMessage = useCallback(
-    async (text: string) => {
-      const trimmed = text.trim();
-      if (!trimmed || isStreaming || trimmed.length > 500) return;
-
-      const userMsg: ChatMessage = {
-        id: generateId(),
-        role: "user",
-        content: trimmed,
-        timestamp: new Date().toISOString(),
-      };
-
-      const assistantId = generateId();
-      const assistantMsg: ChatMessage = {
-        id: assistantId,
-        role: "assistant",
-        content: "",
-        timestamp: new Date().toISOString(),
-      };
-
-      const history = [...messages, userMsg];
-      setMessages([...history, assistantMsg]);
-      setInputText("");
+  const runChat = useCallback(
+    async (
+      userText: string,
+      historyForApi: ChatMessageWithError[],
+      assistantId: string
+    ) => {
+      abortRef.current?.abort();
+      const ctrl = new AbortController();
+      abortRef.current = ctrl;
       setIsStreaming(true);
 
       try {
@@ -102,25 +134,33 @@ export function ChatBot() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            message: trimmed,
-            conversationHistory: history,
+            message: userText,
+            conversationHistory: historyForApi.filter(
+              (m) => !m.error && m.content
+            ),
             _store: buildClientStoreSnapshot(),
           }),
+          signal: ctrl.signal,
         });
 
         if (!res.ok) {
-          let errMsg = `Chat failed (${res.status})`;
+          let errMsg = `Chat failed (HTTP ${res.status})`;
           try {
             const err = (await res.json()) as { error?: string };
             if (err.error) errMsg = err.error;
           } catch {
-            // response wasn't JSON
+            try {
+              const t = await res.text();
+              if (t) errMsg = t.slice(0, 200);
+            } catch {
+              // ignore
+            }
           }
           throw new Error(errMsg);
         }
 
         const reader = res.body?.getReader();
-        if (!reader) throw new Error("No stream available");
+        if (!reader) throw new Error("No stream available from server");
 
         const decoder = new TextDecoder();
         let accumulated = "";
@@ -131,28 +171,98 @@ export function ChatBot() {
           accumulated += decoder.decode(value, { stream: true });
           setMessages((prev) =>
             prev.map((m) =>
-              m.id === assistantId ? { ...m, content: accumulated } : m
+              m.id === assistantId
+                ? { ...m, content: accumulated, error: undefined }
+                : m
             )
           );
         }
 
         if (!accumulated.trim()) {
           throw new Error(
-            "Empty response from AI. Please check your OpenAI API key in Settings."
+            "AI returned an empty response. Please verify your OpenAI API key in Settings → AI."
           );
         }
 
         if (!open) setHasUnread(true);
       } catch (e) {
-        const msg = e instanceof Error ? e.message : "Failed to send";
+        if (e instanceof DOMException && e.name === "AbortError") return;
+        const msg = e instanceof Error ? e.message : "Failed to send message";
+        console.error("[CampusBot] chat error:", e);
         toastError(msg);
-        setMessages((prev) => prev.filter((m) => m.id !== assistantId));
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantId
+              ? {
+                  ...m,
+                  content: m.content,
+                  error: msg,
+                }
+              : m
+          )
+        );
       } finally {
         setIsStreaming(false);
+        abortRef.current = null;
       }
     },
-    [isStreaming, messages, open]
+    [open]
   );
+
+  const sendMessage = useCallback(
+    async (text: string) => {
+      const trimmed = text.trim();
+      if (!trimmed || isStreaming || trimmed.length > 500) return;
+
+      const userMsg: ChatMessageWithError = {
+        id: generateId(),
+        role: "user",
+        content: trimmed,
+        timestamp: new Date().toISOString(),
+      };
+
+      const assistantId = generateId();
+      const assistantMsg: ChatMessageWithError = {
+        id: assistantId,
+        role: "assistant",
+        content: "",
+        timestamp: new Date().toISOString(),
+      };
+
+      const historyForApi = [...messages, userMsg];
+      setMessages([...historyForApi, assistantMsg]);
+      setInputText("");
+      if (textareaRef.current) textareaRef.current.style.height = "auto";
+
+      await runChat(trimmed, historyForApi, assistantId);
+    },
+    [isStreaming, messages, runChat]
+  );
+
+  const retryAssistant = useCallback(
+    async (assistantId: string) => {
+      if (isStreaming) return;
+      const idx = messages.findIndex((m) => m.id === assistantId);
+      if (idx < 1) return;
+      const prevUser = messages[idx - 1];
+      if (prevUser.role !== "user") return;
+
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === assistantId ? { ...m, content: "", error: undefined } : m
+        )
+      );
+
+      await runChat(prevUser.content, messages.slice(0, idx), assistantId);
+    },
+    [isStreaming, messages, runChat]
+  );
+
+  const stopStreaming = () => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setIsStreaming(false);
+  };
 
   const handleOpen = () => {
     setOpen(true);
@@ -181,7 +291,9 @@ export function ChatBot() {
                   <Bot className="h-5 w-5 text-white" />
                 </div>
                 <div>
-                  <p className="font-display font-semibold text-white">CampusBot</p>
+                  <p className="font-display font-semibold text-white">
+                    CampusBot
+                  </p>
                   <p className="flex items-center gap-1.5 text-xs text-slate-400">
                     <span
                       className={cn(
@@ -244,7 +356,25 @@ export function ChatBot() {
               </div>
             )}
 
-            <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto p-4">
+            <div
+              ref={scrollRef}
+              className="flex-1 space-y-4 overflow-y-auto p-4"
+            >
+              {messages.length === 0 && !isStreaming && (
+                <div className="flex flex-col items-center justify-center gap-2 py-8 text-center">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500/40 to-purple-600/40">
+                    <Bot className="h-6 w-6 text-indigo-200" />
+                  </div>
+                  <p className="font-display text-sm font-semibold text-white">
+                    Hi! I am CampusBot.
+                  </p>
+                  <p className="max-w-[260px] text-xs text-slate-400">
+                    Ask me about today&apos;s attendance, defaulters, courses,
+                    or any student / faculty info.
+                  </p>
+                </div>
+              )}
+
               <AnimatePresence initial={false}>
                 {messages.map((msg) => (
                   <motion.div
@@ -269,20 +399,43 @@ export function ChatBot() {
                         "max-w-[85%] rounded-2xl px-3 py-2",
                         msg.role === "user"
                           ? "bg-gradient-to-br from-indigo-600 to-purple-600 text-white"
-                          : "border border-white/10 bg-white/[0.04] text-slate-200"
+                          : msg.error
+                            ? "border border-red-500/30 bg-red-500/10 text-red-100"
+                            : "border border-white/10 bg-white/[0.04] text-slate-200"
                       )}
                     >
                       {msg.role === "assistant" ? (
-                        msg.content ? (
-                          <div className="relative">
-                            <MarkdownContent text={msg.content} />
-                            {isStreaming &&
-                              msg.id ===
-                                messages[messages.length - 1]?.id && (
-                                <span className="ml-0.5 inline-block h-4 w-0.5 animate-pulse bg-indigo-400" />
-                              )}
-                          </div>
-                        ) : null
+                        <>
+                          {msg.content ? (
+                            <div className="relative">
+                              <MarkdownContent text={msg.content} />
+                              {isStreaming &&
+                                msg.id ===
+                                  messages[messages.length - 1]?.id && (
+                                  <span className="ml-0.5 inline-block h-4 w-0.5 animate-pulse bg-indigo-400" />
+                                )}
+                            </div>
+                          ) : null}
+                          {msg.error && (
+                            <div className="mt-1 flex items-start gap-2">
+                              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-300" />
+                              <div className="flex-1">
+                                <p className="text-xs leading-relaxed text-red-100">
+                                  {msg.error}
+                                </p>
+                                <button
+                                  type="button"
+                                  onClick={() => retryAssistant(msg.id)}
+                                  disabled={isStreaming}
+                                  className="mt-1.5 inline-flex items-center gap-1 rounded-md border border-red-400/30 bg-red-500/10 px-2 py-0.5 text-[11px] font-medium text-red-100 hover:bg-red-500/20 disabled:opacity-50"
+                                >
+                                  <RefreshCw className="h-3 w-3" />
+                                  Retry
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </>
                       ) : (
                         <p className="whitespace-pre-wrap text-sm">
                           {msg.content}
@@ -342,15 +495,27 @@ export function ChatBot() {
                   rows={1}
                   className="max-h-24 flex-1 resize-none rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-indigo-500/50 focus:outline-none disabled:opacity-50"
                 />
-                <button
-                  type="button"
-                  onClick={() => sendMessage(inputText)}
-                  disabled={isStreaming || !inputText.trim()}
-                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-600 to-purple-600 text-white disabled:opacity-40"
-                  aria-label="Send"
-                >
-                  <Send className="h-4 w-4" />
-                </button>
+                {isStreaming ? (
+                  <button
+                    type="button"
+                    onClick={stopStreaming}
+                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-red-500/80 text-white hover:bg-red-500"
+                    aria-label="Stop"
+                    title="Stop generating"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => sendMessage(inputText)}
+                    disabled={!inputText.trim()}
+                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-600 to-purple-600 text-white disabled:opacity-40"
+                    aria-label="Send"
+                  >
+                    <Send className="h-4 w-4" />
+                  </button>
+                )}
               </div>
               <p className="mt-1 text-right text-[10px] text-slate-600">
                 {inputText.length}/500
