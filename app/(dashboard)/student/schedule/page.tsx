@@ -65,9 +65,12 @@ function colorForSubject(subjectId: string): string {
   return SUBJECT_COLORS[Math.abs(hash) % SUBJECT_COLORS.length];
 }
 
-function useNow(intervalMs = 1000): Date {
-  const [now, setNow] = useState(() => new Date());
+function useNow(intervalMs = 1000): Date | null {
+  // Returns null on first render (SSR + hydration) and a real Date afterwards.
+  // This avoids React #418 hydration mismatch errors.
+  const [now, setNow] = useState<Date | null>(null);
   useEffect(() => {
+    setNow(new Date());
     const t = setInterval(() => setNow(new Date()), intervalMs);
     return () => clearInterval(t);
   }, [intervalMs]);
@@ -161,7 +164,7 @@ export default function StudentTimetablePage() {
   }, [data, todayDay]);
 
   const nextLecture = useMemo(() => {
-    if (todaySlots.length === 0) return null;
+    if (!now || todaySlots.length === 0) return null;
     const nowMins = now.getHours() * 60 + now.getMinutes();
     return (
       todaySlots.find((s) => timeToMinutes(s.startTime) > nowMins) ?? null
@@ -169,7 +172,7 @@ export default function StudentTimetablePage() {
   }, [todaySlots, now]);
 
   const countdown = useMemo(() => {
-    if (!nextLecture) return null;
+    if (!now || !nextLecture) return null;
     const target = new Date(now);
     const [h, m] = nextLecture.startTime.split(":").map(Number);
     target.setHours(h, m, 0, 0);
@@ -261,11 +264,14 @@ export default function StudentTimetablePage() {
               {todaySlots.map((slot, i) => {
                 const stats = data.subjectStats.get(slot.subjectId);
                 const color = colorForSubject(slot.subjectId);
-                const nowMins = now.getHours() * 60 + now.getMinutes();
+                const nowMins = now
+                  ? now.getHours() * 60 + now.getMinutes()
+                  : -1;
                 const startMins = timeToMinutes(slot.startTime);
                 const endMins = timeToMinutes(slot.endTime);
-                const isLive = nowMins >= startMins && nowMins < endMins;
-                const isPast = nowMins >= endMins;
+                const isLive =
+                  nowMins >= 0 && nowMins >= startMins && nowMins < endMins;
+                const isPast = nowMins >= 0 && nowMins >= endMins;
                 return (
                   <motion.li
                     key={`${slot.subjectId}-${i}`}

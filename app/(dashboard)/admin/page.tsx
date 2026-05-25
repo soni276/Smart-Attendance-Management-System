@@ -122,7 +122,8 @@ const PIE_COLORS = [
 
 export default function AdminDashboardPage() {
   const [refreshKey, setRefreshKey] = useState(0);
-  const [lastRefresh, setLastRefresh] = useState(new Date());
+  // Initialize as null so SSR markup matches first client render.
+  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
 
   const refresh = useCallback(() => {
     setRefreshKey((k) => k + 1);
@@ -130,6 +131,7 @@ export default function AdminDashboardPage() {
   }, []);
 
   useEffect(() => {
+    setLastRefresh(new Date());
     const interval = setInterval(refresh, 30000);
     return () => clearInterval(interval);
   }, [refresh]);
@@ -309,8 +311,8 @@ export default function AdminDashboardPage() {
             {data.stats.institutionName}
           </h2>
           <p className="text-sm text-slate-500">
-            {data.stats.semesterName} · AY {data.stats.academicYear} · Last
-            updated {formatTime(lastRefresh)}
+            {data.stats.semesterName} · AY {data.stats.academicYear}
+            {lastRefresh && <> · Last updated {formatTime(lastRefresh)}</>}
           </p>
         </div>
         <button

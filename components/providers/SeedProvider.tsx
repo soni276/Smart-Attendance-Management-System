@@ -49,18 +49,24 @@ function migrateLegacyKeysIfNeeded(): void {
 }
 
 export function SeedProvider({ children }: { children: React.ReactNode }) {
-  const [seeding, setSeeding] = useState(() => {
-    if (typeof window !== "undefined") migrateLegacyKeysIfNeeded();
-    return !alreadyInitialized();
-  });
+  // Use a deterministic initial state for SSR + first client render to avoid
+  // React hydration mismatch (#418). All localStorage access happens in
+  // useEffect, which only runs after hydration.
+  const [mounted, setMounted] = useState(false);
+  const [seeding, setSeeding] = useState(true);
 
   useEffect(() => {
-    if (!seeding) return;
+    setMounted(true);
+    migrateLegacyKeysIfNeeded();
+    if (alreadyInitialized()) {
+      setSeeding(false);
+      return;
+    }
     seedDemoData();
     setSeeding(false);
-  }, [seeding]);
+  }, []);
 
-  if (seeding) {
+  if (!mounted || seeding) {
     return <LoadingScreen message="Initializing Campus Attendance System..." />;
   }
 

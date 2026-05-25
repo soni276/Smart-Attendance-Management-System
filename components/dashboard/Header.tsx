@@ -341,13 +341,16 @@ export function Header({
 }: HeaderProps) {
   const pathname = usePathname();
   const [user, setUser] = useState<SessionUser | null>(null);
-  const [now, setNow] = useState(() => new Date());
+  // Start as null so the server-rendered HTML matches the first client render.
+  // The clock is populated only after mount to avoid hydration mismatches.
+  const [now, setNow] = useState<Date | null>(null);
 
   useEffect(() => {
     setUser(getCurrentUser());
   }, [pathname]);
 
   useEffect(() => {
+    setNow(new Date());
     const timer = setInterval(() => {
       setNow(new Date());
     }, 1000);
@@ -387,8 +390,19 @@ export function Header({
 
       <div className="flex items-center gap-4 sm:gap-5">
         <div className="hidden text-right sm:block">
-          <p className="text-sm font-medium text-white">{formatDate(now)}</p>
-          <p className="text-xs text-slate-400">{formatTime(now)}</p>
+          {now ? (
+            <>
+              <p className="text-sm font-medium text-white">
+                {formatDate(now)}
+              </p>
+              <p className="text-xs text-slate-400">{formatTime(now)}</p>
+            </>
+          ) : (
+            <>
+              <p className="text-sm font-medium text-transparent">—</p>
+              <p className="text-xs text-transparent">—</p>
+            </>
+          )}
         </div>
 
         {user && <NotificationsButton user={user} />}
